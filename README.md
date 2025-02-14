@@ -24,6 +24,17 @@ Run the FastAPI server:
 uvicorn flux_app:app --reload
 ```
 
+### Command Line Interface
+Generate images using the command line:
+
+```bash
+python3.11 txt2image.py --model schnell \
+--n-images 1 \
+--image-size 512x512 \
+--verbose \
+'A photo of an astronaut riding a horse on a beach.'
+```
+
 ## Features
 
 - Text-to-image generation
