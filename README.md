@@ -51,6 +51,19 @@ python3.11 txt2image.py --model schnell \
 - Stable Diffusion API compatibility for third-party UIs
 - Configurable network access modes
 
+## Example Generation
+
+Here's an example image generated using the Flux model:
+
+![Moonset over ocean](generated_moonset.png)
+
+Prompt: "a beautiful moonset over the ocean, highly detailed, 4k"
+Parameters:
+- Model: schnell
+- Size: 512x512
+- Steps: 2
+- CFG Scale: 4.0
+
 ## API Integration
 
 The application provides a Stable Diffusion-compatible API that can be used with third-party UIs like Open WebUI.
