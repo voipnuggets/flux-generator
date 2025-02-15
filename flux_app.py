@@ -351,59 +351,7 @@ def create_ui(enable_api: bool = False, api_port: int = 7860):
     
     return demo
 
-def main():
-    """Main entry point"""
-    try:
-        check_system_compatibility()
-        
-        # Parse command line arguments
-        parser = argparse.ArgumentParser(description="FLUX Image Generator")
-        parser.add_argument("--enable-api", action="store_true", help="Enable API endpoint")
-        parser.add_argument("--api-port", type=int, default=7860, help="Port for API endpoint")
-        args = parser.parse_args()
-        
-        # Add CORS middleware
-        from fastapi.middleware.cors import CORSMiddleware
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
-        
-        if args.enable_api:
-            # Use uvicorn to run FastAPI
-            import uvicorn
-            uvicorn.run(
-                "flux_app:app",  # Use string reference to app
-                host="127.0.0.1",
-                port=args.api_port,
-                reload=False,
-                log_level="info"
-            )
-        else:
-            # Create and launch UI only
-            demo = create_ui(enable_api=args.enable_api, api_port=args.api_port)
-            demo.launch(
-                server_name="127.0.0.1",
-                server_port=args.api_port,
-                share=False,  # Avoid antivirus issues
-                show_error=True,
-                inbrowser=True
-            )
-        
-    except SystemError as e:
-        print(f"Error: {e}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-
-@app.get("/sdapi/v1/sd-models", include_in_schema=True)
+@app.get("/sdapi/v1/sd-models")
 async def get_models():
     """Get available models endpoint required by Open WebUI"""
     print("Models endpoint called")  # Debug log
@@ -426,12 +374,6 @@ async def get_models():
         }
     ]
     return models
-
-@app.get("/")
-async def root():
-    """Root endpoint for testing"""
-    print("Root endpoint called")  # Debug log
-    return {"message": "Flux API is running"}
 
 @app.get("/sdapi/v1/options")
 async def get_options():
@@ -487,4 +429,65 @@ async def get_progress():
         },
         "current_image": None,
         "textinfo": "Idle"
-    } 
+    }
+
+def main():
+    """Main entry point"""
+    try:
+        check_system_compatibility()
+        
+        # Parse command line arguments
+        parser = argparse.ArgumentParser(description="FLUX Image Generator")
+        parser.add_argument("--enable-api", action="store_true", help="Enable API endpoint")
+        parser.add_argument("--api-port", type=int, default=7860, help="Port for API endpoint")
+        parser.add_argument("--listen", action="store_true", help="Allow external connections")
+        args = parser.parse_args()
+        
+        # Add CORS middleware
+        from fastapi.middleware.cors import CORSMiddleware
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        
+        # Determine host based on --listen flag
+        host = "0.0.0.0" if args.listen else "127.0.0.1"
+        
+        if args.enable_api:
+            # Use uvicorn to run FastAPI
+            import uvicorn
+            print(f"\nStarting Flux API server on {host}:{args.api_port}")
+            print("To use with Open WebUI in Docker, make sure to:")
+            print("1. Start the server with: python3.11 flux_app.py --enable-api --listen")
+            print("2. In Open WebUI, use URL: http://host.docker.internal:7860")
+            
+            uvicorn.run(
+                app,
+                host=host,
+                port=args.api_port,
+                reload=False,
+                log_level="info"
+            )
+        else:
+            # Create and launch UI only
+            demo = create_ui(enable_api=args.enable_api, api_port=args.api_port)
+            demo.launch(
+                server_name=host,
+                server_port=args.api_port,
+                share=False,  # Avoid antivirus issues
+                show_error=True,
+                inbrowser=True
+            )
+        
+    except SystemError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main() 

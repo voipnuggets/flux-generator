@@ -21,7 +21,11 @@ python gradio_app.py
 
 Run the FastAPI server:
 ```bash
+# For local use only:
 python3.11 flux_app.py --enable-api
+
+# To allow connections from Docker or other machines:
+python3.11 flux_app.py --enable-api --listen
 ```
 
 ### Command Line Interface
@@ -49,11 +53,45 @@ The application provides a Stable Diffusion-compatible API that can be used with
 
 ### Starting the API Server
 
+For local use only:
 ```bash
 python3.11 flux_app.py --enable-api
 ```
 
-This will start the server on `http://127.0.0.1:7860`.
+To allow connections from Docker or other machines:
+```bash
+python3.11 flux_app.py --enable-api --listen
+```
+
+The server will start on port 7860 (configurable with `--api-port`).
+
+### Docker Integration with Open WebUI
+
+1. Start the Flux API server on your host machine:
+   ```bash
+   python3.11 flux_app.py --enable-api --listen
+   ```
+
+2. Run Open WebUI in Docker:
+   ```bash
+   docker run -d -p 3000:8080 \
+     --add-host=host.docker.internal:host-gateway \
+     -e AUTOMATIC1111_BASE_URL=http://host.docker.internal:7860/ \
+     -e ENABLE_IMAGE_GENERATION=True \
+     -v open-webui:/app/backend/data \
+     --name open-webui \
+     --restart always \
+     ghcr.io/open-webui/open-webui:main
+   ```
+
+3. Access Open WebUI at `http://localhost:3000`
+
+The connection flow works like this:
+```
+Open WebUI (Docker Container) -> host.docker.internal:7860 -> Flux API (Host Machine)
+```
+
+This setup runs the resource-intensive model natively on your Mac while the UI runs in Docker.
 
 ### Available Endpoints
 
@@ -86,18 +124,6 @@ This will start the server on `http://127.0.0.1:7860`.
 4. `/sdapi/v1/progress` (GET)
    - Get generation progress information
 
-### Open WebUI Integration
-
-1. Start the Flux API server:
-   ```bash
-   python3.11 flux_app.py --enable-api
-   ```
-
-2. In Open WebUI:
-   - Go to Settings > API Connections
-   - Add a new connection with URL: `http://127.0.0.1:7860`
-   - The Flux models will appear in the model selection dropdown
-
 ### Example API Usage
 
 Here's a Python example to generate images:
@@ -107,7 +133,7 @@ import requests
 import json
 import base64
 
-url = "http://127.0.0.1:7860/sdapi/v1/txt2img"
+url = "http://127.0.0.1:7860/sdapi/v1/txt2img"  # Use host.docker.internal if running in Docker
 payload = {
     "prompt": "a beautiful sunset over the ocean, highly detailed, 4k",
     "width": 512,
@@ -134,5 +160,6 @@ if result["images"]:
 
 - The API is designed to be compatible with Stable Diffusion Web UI's API format
 - Default port is 7860, can be changed with `--api-port`
+- Use `--listen` flag to allow connections from Docker or other machines
 - CORS is enabled to allow requests from web UIs
 - The schnell model uses 2 steps by default, while the dev model uses 50 steps
