@@ -5,8 +5,21 @@ A Python application for generating images using the FLUX model on Apple Silicon
 ## Requirements
 
 - macOS with Apple Silicon (M1/M2/M3)
-- Python 3.10+
+- Python 3.10+ (tested with python3.11)
 - MLX framework
+
+## Example Generation
+
+Here's an example image generated using the Flux model:
+
+![Moonset over ocean](generated_moonset.png)
+
+Prompt: "a beautiful moonset over the ocean, highly detailed, 4k"
+Parameters:
+- Model: schnell
+- Size: 512x512
+- Steps: 2
+- CFG Scale: 4.0
 
 ## Installation
 
@@ -50,19 +63,6 @@ python3.11 txt2image.py --model schnell \
 - Memory usage reporting
 - Stable Diffusion API compatibility for third-party UIs
 - Configurable network access modes
-
-## Example Generation
-
-Here's an example image generated using the Flux model:
-
-![Moonset over ocean](generated_moonset.png)
-
-Prompt: "a beautiful moonset over the ocean, highly detailed, 4k"
-Parameters:
-- Model: schnell
-- Size: 512x512
-- Steps: 2
-- CFG Scale: 4.0
 
 ## API Integration
 
