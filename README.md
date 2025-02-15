@@ -21,11 +21,14 @@ python gradio_app.py
 
 Run the FastAPI server:
 ```bash
-# For local use only:
+# For local use only (most secure):
 python3.11 flux_app.py --enable-api
 
-# To allow connections from Docker or other machines:
-python3.11 flux_app.py --enable-api --listen
+# For local network access (LAN only):
+python3.11 flux_app.py --enable-api --listen-local
+
+# For all network access (including Docker):
+python3.11 flux_app.py --enable-api --listen-all
 ```
 
 ### Command Line Interface
@@ -46,6 +49,7 @@ python3.11 txt2image.py --model schnell \
 - Customizable image size and generation parameters
 - Memory usage reporting
 - Stable Diffusion API compatibility for third-party UIs
+- Configurable network access modes
 
 ## API Integration
 
@@ -53,15 +57,31 @@ The application provides a Stable Diffusion-compatible API that can be used with
 
 ### Starting the API Server
 
-For local use only:
-```bash
-python3.11 flux_app.py --enable-api
-```
+The server supports three access modes with different security levels:
 
-To allow connections from Docker or other machines:
-```bash
-python3.11 flux_app.py --enable-api --listen
-```
+1. Local Only (Most Secure):
+   ```bash
+   python3.11 flux_app.py --enable-api
+   ```
+   - Only allows connections from localhost (127.0.0.1)
+   - Best for local development and testing
+   - Not accessible from Docker or other machines
+
+2. Local Network:
+   ```bash
+   python3.11 flux_app.py --enable-api --listen-local
+   ```
+   - Allows connections from your local network (LAN)
+   - Good for accessing from other devices on your network
+   - More secure than listening on all interfaces
+
+3. All Networks:
+   ```bash
+   python3.11 flux_app.py --enable-api --listen-all
+   ```
+   - Allows connections from any network interface
+   - Required for Docker integration
+   - Less secure, use only in trusted networks
 
 The server will start on port 7860 (configurable with `--api-port`).
 
@@ -69,8 +89,9 @@ The server will start on port 7860 (configurable with `--api-port`).
 
 1. Start the Flux API server on your host machine:
    ```bash
-   python3.11 flux_app.py --enable-api --listen
+   python3.11 flux_app.py --enable-api --listen-all
    ```
+   Note: Docker integration requires `--listen-all` to allow container access.
 
 2. Run Open WebUI in Docker:
    ```bash
@@ -133,7 +154,12 @@ import requests
 import json
 import base64
 
-url = "http://127.0.0.1:7860/sdapi/v1/txt2img"  # Use host.docker.internal if running in Docker
+# Use appropriate URL based on your setup:
+# Local only:      "http://127.0.0.1:7860"
+# Local network:   "http://192.168.1.1:7860"
+# Docker:          "http://host.docker.internal:7860"
+url = "http://127.0.0.1:7860/sdapi/v1/txt2img"
+
 payload = {
     "prompt": "a beautiful sunset over the ocean, highly detailed, 4k",
     "width": 512,
@@ -160,6 +186,9 @@ if result["images"]:
 
 - The API is designed to be compatible with Stable Diffusion Web UI's API format
 - Default port is 7860, can be changed with `--api-port`
-- Use `--listen` flag to allow connections from Docker or other machines
+- Three network access modes available:
+  - `--enable-api`: Local only (most secure)
+  - `--listen-local`: Local network access
+  - `--listen-all`: All network access (required for Docker)
 - CORS is enabled to allow requests from web UIs
 - The schnell model uses 2 steps by default, while the dev model uses 50 steps

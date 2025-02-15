@@ -440,7 +440,13 @@ def main():
         parser = argparse.ArgumentParser(description="FLUX Image Generator")
         parser.add_argument("--enable-api", action="store_true", help="Enable API endpoint")
         parser.add_argument("--api-port", type=int, default=7860, help="Port for API endpoint")
-        parser.add_argument("--listen", action="store_true", help="Allow external connections")
+        
+        # Add mutually exclusive group for listening options
+        listen_group = parser.add_mutually_exclusive_group()
+        listen_group.add_argument("--listen-all", action="store_true", help="Listen on all network interfaces (0.0.0.0)")
+        listen_group.add_argument("--listen-local", action="store_true", help="Listen on local network (192.168.0.0/16, 10.0.0.0/8)")
+        listen_group.add_argument("--listen", action="store_true", help="[Deprecated] Use --listen-all instead")
+        
         args = parser.parse_args()
         
         # Add CORS middleware
@@ -453,16 +459,35 @@ def main():
             allow_headers=["*"],
         )
         
-        # Determine host based on --listen flag
-        host = "0.0.0.0" if args.listen else "127.0.0.1"
+        # Determine host based on listening flags
+        if args.listen or args.listen_all:
+            host = "0.0.0.0"
+            print("\nWarning: Server is listening on all network interfaces (0.0.0.0)")
+            print("This mode is less secure and should only be used in trusted networks")
+        elif args.listen_local:
+            host = "192.168.1.1"  # This will allow local network access
+            print("\nWarning: Server is listening on local network")
+            print("This mode allows access from devices on your local network")
+        else:
+            host = "127.0.0.1"  # localhost only
+            print("\nServer is listening on localhost only (most secure)")
         
         if args.enable_api:
             # Use uvicorn to run FastAPI
             import uvicorn
             print(f"\nStarting Flux API server on {host}:{args.api_port}")
-            print("To use with Open WebUI in Docker, make sure to:")
-            print("1. Start the server with: python3.11 flux_app.py --enable-api --listen")
-            print("2. In Open WebUI, use URL: http://host.docker.internal:7860")
+            print("\nAccess modes:")
+            print("1. Local only:     --enable-api                  (most secure, localhost only)")
+            print("2. Local network:  --enable-api --listen-local   (allows LAN access)")
+            print("3. All networks:   --enable-api --listen-all     (allows all connections)")
+            
+            if args.listen:
+                print("\nNote: --listen is deprecated, please use --listen-all instead")
+            
+            if host != "127.0.0.1":
+                print("\nTo use with Open WebUI in Docker:")
+                print("1. Start the server with: python3.11 flux_app.py --enable-api --listen-all")
+                print("2. In Open WebUI, use URL: http://host.docker.internal:7860")
             
             uvicorn.run(
                 app,
