@@ -2,12 +2,6 @@
 
 A Python application for generating images using the FLUX model on Apple Silicon Macs.
 
-## Requirements
-
-- macOS with Apple Silicon (M1/M2/M3)
-- Python 3.10+ (tested with python3.11)
-- MLX framework
-
 ## Example Generation
 
 Here's an example image generated using the Flux model:
@@ -20,6 +14,12 @@ Parameters:
 - Size: 512x512
 - Steps: 2
 - CFG Scale: 4.0
+
+## Requirements
+
+- macOS with Apple Silicon (M1/M2/M3)
+- Python 3.10+ (tested with python3.11)
+- MLX framework
 
 ## Installation
 
