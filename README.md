@@ -205,3 +205,53 @@ if result["images"]:
   - `--listen-all`: All network access (required for Docker)
 - CORS is enabled to allow requests from web UIs
 - The schnell model uses 2 steps by default, while the dev model uses 50 steps
+
+# Model Management
+
+The Flux API server requires model files to be downloaded before use. You can download the models in two ways:
+
+1. Automatic download on first use:
+   - Models will be downloaded automatically when you first try to generate an image
+   - This may cause a delay on your first generation
+
+2. Manual download with flags:
+   ```bash
+   # Download models if not present
+   python3.11 flux_app.py --download-models
+   
+   # Force re-download models (overwrites existing files)
+   python3.11 flux_app.py --force-download
+   ```
+
+Model files are stored in `~/.flux/models/` directory.
+
+# Running the Server
+
+You can run the Flux server in different modes depending on your needs:
+
+1. Local Only (Most Secure):
+   ```bash
+   python3.11 flux_app.py --enable-api
+   ```
+   - Only allows connections from localhost
+   - Best for local development and testing
+
+2. Local Network:
+   ```bash
+   python3.11 flux_app.py --enable-api --listen-local
+   ```
+   - Allows connections from your local network (192.168.0.0/16, 10.0.0.0/8)
+   - Useful for accessing from other devices on your network
+
+3. All Networks:
+   ```bash
+   python3.11 flux_app.py --enable-api --listen-all
+   ```
+   - Allows connections from any IP address
+   - Required for Docker container access
+   - Use with caution, only on trusted networks
+
+Additional options:
+- `--api-port PORT`: Change the server port (default: 7860)
+- `--download-models`: Download required models if not present
+- `--force-download`: Force re-download of models

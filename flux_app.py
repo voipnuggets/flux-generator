@@ -2,11 +2,9 @@ import io
 import base64
 import argparse
 import gradio as gr
-from typing import Optional, List
-from fastapi import FastAPI, Request, Form, HTTPException
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from typing import Optional, List, Tuple
+from fastapi import FastAPI, HTTPException, Form
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import mlx.core as mx
 from PIL import Image
@@ -16,10 +14,19 @@ import sys
 from pathlib import Path
 import webbrowser
 from flux import FluxPipeline
+from flux.utils import configs, hf_hub_download
+import os
 
 app = FastAPI(title="Flux Image Generator")
-templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Add CORS middleware for API access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Global pipeline instance
 flux_pipeline = None
@@ -75,12 +82,13 @@ def check_system_compatibility():
     
     return True
 
-def to_latent_size(image_size):
-    h, w = image_size
+def to_latent_size(size: Tuple[int, int]) -> Tuple[int, int]:
+    """Convert image size to latent size"""
+    h, w = size
     h = ((h + 15) // 16) * 16
     w = ((w + 15) // 16) * 16
 
-    if (h, w) != image_size:
+    if (h, w) != size:
         print(
             "Warning: The image dimensions need to be divisible by 16px. "
             f"Changing size to {h}x{w}."
@@ -144,13 +152,6 @@ def generate_images(request: GenerationRequest) -> List[str]:
         images.append(f"data:image/png;base64,{img_str}")
     
     return images
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request}
-    )
 
 @app.post("/generate")
 async def generate(request: GenerationRequest) -> GenerationResponse:
@@ -250,103 +251,261 @@ def generate_for_ui(prompt, model_type, num_steps, guidance_scale, width, height
     images = generate_images(request)
     return images[0] if images else None
 
+def check_model_status(model_name: str) -> str:
+    """Check if model files exist and return status message"""
+    config = configs[model_name]
+    if config.repo_id is None:
+        return "❌ No repository configured"
+    
+    models_dir = Path.home() / ".flux" / "models"
+    flow_path = models_dir / f"{model_name}-flow.safetensors"
+    ae_path = models_dir / f"{model_name}-ae.safetensors"
+    clip_config = models_dir / model_name / "text_encoder/config.json"
+    clip_model = models_dir / model_name / "text_encoder/model.safetensors"
+    t5_config = models_dir / model_name / "text_encoder_2/config.json"
+    t5_model_index = models_dir / model_name / "text_encoder_2/model.safetensors.index.json"
+    
+    files_exist = all([
+        flow_path.exists(),
+        ae_path.exists(),
+        clip_config.exists(),
+        clip_model.exists(),
+        t5_config.exists(),
+        t5_model_index.exists()
+    ])
+    
+    return "✅ Downloaded" if files_exist else "❌ Not downloaded"
+
+def download_model_ui(model_name: str, force: bool = False) -> str:
+    """Download model files from UI"""
+    try:
+        check_and_download_models(model_name, force)
+        return f"✅ Successfully downloaded {model_name} model"
+    except Exception as e:
+        return f"❌ Error downloading {model_name} model: {str(e)}"
+
 def create_ui(enable_api: bool = False, api_port: int = 7860):
     """Create the Gradio interface"""
-    with gr.Blocks() as demo:
-        gr.Markdown(
-            """
-            # FLUX Image Generator
-            Generate images from text using the FLUX model on Apple Silicon Macs.
-            """
-        )
-        
-        with gr.Row():
-            with gr.Column():
-                prompt = gr.Textbox(
-                    label="Prompt",
-                    placeholder="Enter your prompt here...",
-                    lines=3
-                )
-                model_type = gr.Radio(
-                    choices=["schnell", "dev"],
-                    value="schnell",
-                    label="Model Type"
-                )
-                
-                with gr.Row():
-                    image_width = gr.Slider(
-                        minimum=256,
-                        maximum=1024,
-                        step=64,
-                        value=512,
-                        label="Width"
-                    )
-                    image_height = gr.Slider(
-                        minimum=256,
-                        maximum=1024,
-                        step=64,
-                        value=512,
-                        label="Height"
-                    )
-                
-                with gr.Row():
-                    num_steps = gr.Slider(
-                        minimum=2,
-                        maximum=100,
-                        step=1,
-                        value=None,
-                        label="Number of Steps (leave empty for default)"
-                    )
-                    guidance = gr.Slider(
-                        minimum=1.0,
-                        maximum=20.0,
-                        step=0.5,
-                        value=4.0,
-                        label="Guidance Scale"
-                    )
-                
-                seed = gr.Number(
-                    label="Seed (leave empty for random)",
-                    precision=0
-                )
-                
-                with gr.Row():
-                    generate_btn = gr.Button("Generate")
-                    if enable_api:
-                        api_btn = gr.Button("Open API Documentation")
+    css = """
+        .container { max-width: 1200px; margin: auto; }
+        .prompt-box { min-height: 100px; }
+        .status-box { margin-top: 10px; }
+        .generate-btn { min-height: 60px; }
+    """
+    
+    with gr.Blocks(theme=gr.themes.Soft(), css=css) as demo:
+        with gr.Column(elem_classes="container"):
+            gr.Markdown(
+                """
+                # 🎨 FLUX Image Generator
+                Generate beautiful images from text using the FLUX model on Apple Silicon Macs.
+                """
+            )
             
-            with gr.Column():
-                output_image = gr.Image(label="Generated Image")
-                save_btn = gr.Button("Save Image", visible=False)
-        
-        # Handle generation
-        generated_image = generate_btn.click(
-            fn=generate_for_ui,  # Using the new wrapper function
-            inputs=[
-                prompt,
-                model_type,
-                num_steps,
-                guidance,
-                image_width,
-                image_height,
-                seed
-            ],
-            outputs=output_image
-        )
-        
-        # Show save button when image is generated
-        generated_image.then(
-            lambda: gr.Button(visible=True),
-            None,
-            save_btn
-        )
-        
-        # Handle API documentation
-        if enable_api:
-            api_btn.click(
-                lambda: webbrowser.open(f"http://127.0.0.1:{api_port}"),
-                None,
-                None
+            with gr.Tabs():
+                # Model Management Tab
+                with gr.Tab("📦 Model Management", id="model_tab"):
+                    with gr.Column():
+                        gr.Markdown("### Model Status")
+                        with gr.Row():
+                            with gr.Column():
+                                schnell_status = gr.Textbox(
+                                    label="Flux Schnell Status",
+                                    value=check_model_status("flux-schnell"),
+                                    interactive=False
+                                )
+                                download_schnell = gr.Button(
+                                    "📥 Download Schnell Model",
+                                    variant="primary"
+                                )
+                            
+                            with gr.Column():
+                                dev_status = gr.Textbox(
+                                    label="Flux Dev Status",
+                                    value=check_model_status("flux-dev"),
+                                    interactive=False
+                                )
+                                download_dev = gr.Button(
+                                    "📥 Download Dev Model",
+                                    variant="primary"
+                                )
+                        
+                        with gr.Row():
+                            force_download = gr.Checkbox(
+                                label="Force Re-download",
+                                value=False,
+                                info="Check this to re-download even if model files exist"
+                            )
+                        
+                        download_status = gr.Textbox(
+                            label="Download Status",
+                            value="",
+                            interactive=False,
+                            elem_classes="status-box"
+                        )
+                
+                # Image Generation Tab
+                with gr.Tab("🖼️ Generate", id="generate_tab"):
+                    with gr.Row():
+                        # Left Column - Controls
+                        with gr.Column():
+                            prompt = gr.Textbox(
+                                label="Prompt",
+                                placeholder="Enter your prompt here... (e.g., 'a beautiful moonset over the ocean, highly detailed, 4k')",
+                                lines=3,
+                                elem_classes="prompt-box"
+                            )
+                            
+                            with gr.Group():
+                                gr.Markdown("### Model Settings")
+                                model_type = gr.Radio(
+                                    choices=["schnell", "dev"],
+                                    value="schnell",
+                                    label="Model Type",
+                                    info="Schnell (2 steps) is faster, Dev (50 steps) is higher quality"
+                                )
+                                
+                                with gr.Row():
+                                    num_steps = gr.Slider(
+                                        minimum=2,
+                                        maximum=100,
+                                        step=1,
+                                        value=None,
+                                        label="Steps",
+                                        info="Leave empty for default (2 for Schnell, 50 for Dev)"
+                                    )
+                                    guidance = gr.Slider(
+                                        minimum=1.0,
+                                        maximum=20.0,
+                                        step=0.5,
+                                        value=4.0,
+                                        label="Guidance Scale",
+                                        info="Higher values = stronger adherence to prompt"
+                                    )
+                            
+                            with gr.Group():
+                                gr.Markdown("### Image Settings")
+                                with gr.Row():
+                                    image_width = gr.Slider(
+                                        minimum=256,
+                                        maximum=1024,
+                                        step=64,
+                                        value=512,
+                                        label="Width"
+                                    )
+                                    image_height = gr.Slider(
+                                        minimum=256,
+                                        maximum=1024,
+                                        step=64,
+                                        value=512,
+                                        label="Height"
+                                    )
+                                
+                                seed = gr.Number(
+                                    label="Seed",
+                                    value=None,
+                                    precision=0,
+                                    info="Leave empty for random seed"
+                                )
+                            
+                            generate_btn = gr.Button(
+                                "🎨 Generate Image",
+                                variant="primary",
+                                elem_classes="generate-btn"
+                            )
+                        
+                        # Right Column - Output
+                        with gr.Column():
+                            output_image = gr.Image(
+                                label="Generated Image",
+                                type="pil",
+                                show_download_button=True,
+                                show_label=True
+                            )
+                            image_info = gr.Markdown(
+                                visible=True,
+                                value="*Click 'Generate Image' to create a new image*"
+                            )
+                
+                # API Documentation Tab
+                if enable_api:
+                    with gr.Tab("🔧 API", id="api_tab"):
+                        gr.Markdown(
+                            """
+                            ### API Documentation
+                            The Flux Image Generator provides a Stable Diffusion-compatible API
+                            that can be used with third-party UIs like Open WebUI.
+                            
+                            #### Endpoints:
+                            - `/sdapi/v1/txt2img` - Generate images
+                            - `/sdapi/v1/sd-models` - List available models
+                            - `/sdapi/v1/options` - Get/set generation options
+                            """
+                        )
+                        api_btn = gr.Button(
+                            "📚 View Full API Documentation",
+                            variant="secondary"
+                        )
+                        api_btn.click(
+                            lambda: webbrowser.open(f"http://127.0.0.1:{api_port}/docs"),
+                            None,
+                            None
+                        )
+            
+            # Event handlers
+            def on_generate(*args):
+                try:
+                    image = generate_for_ui(*args)
+                    if image:
+                        return [
+                            image,
+                            gr.Markdown(visible=True, value="✨ Image generated successfully!")
+                        ]
+                    else:
+                        return [
+                            None,
+                            gr.Markdown(visible=True, value="❌ Failed to generate image")
+                        ]
+                except Exception as e:
+                    return [
+                        None,
+                        gr.Markdown(visible=True, value=f"❌ Error: {str(e)}")
+                    ]
+            
+            generate_btn.click(
+                fn=on_generate,
+                inputs=[
+                    prompt,
+                    model_type,
+                    num_steps,
+                    guidance,
+                    image_width,
+                    image_height,
+                    seed
+                ],
+                outputs=[
+                    output_image,
+                    image_info
+                ]
+            )
+            
+            # Model download handlers
+            download_schnell.click(
+                fn=lambda force: download_model_ui("flux-schnell", force),
+                inputs=[force_download],
+                outputs=[download_status]
+            ).then(
+                fn=lambda: check_model_status("flux-schnell"),
+                outputs=[schnell_status]
+            )
+            
+            download_dev.click(
+                fn=lambda force: download_model_ui("flux-dev", force),
+                inputs=[force_download],
+                outputs=[download_status]
+            ).then(
+                fn=lambda: check_model_status("flux-dev"),
+                outputs=[dev_status]
             )
     
     return demo
@@ -431,6 +590,88 @@ async def get_progress():
         "textinfo": "Idle"
     }
 
+def check_and_download_models(model_name: str, force_download: bool = False):
+    """Check if model files exist and download if needed"""
+    config = configs[model_name]
+    if config.repo_id is None:
+        raise ValueError(f"No repository configured for model {model_name}")
+    
+    # Create models directory if it doesn't exist
+    models_dir = Path.home() / ".flux" / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Define paths for model files
+    flow_path = models_dir / f"{model_name}-flow.safetensors"
+    ae_path = models_dir / f"{model_name}-ae.safetensors"
+    clip_config = models_dir / model_name / "text_encoder/config.json"
+    clip_model = models_dir / model_name / "text_encoder/model.safetensors"
+    t5_config = models_dir / model_name / "text_encoder_2/config.json"
+    t5_model_index = models_dir / model_name / "text_encoder_2/model.safetensors.index.json"
+    
+    # Check if files exist
+    files_exist = all([
+        flow_path.exists(),
+        ae_path.exists(),
+        clip_config.exists(),
+        clip_model.exists(),
+        t5_config.exists(),
+        t5_model_index.exists()
+    ])
+    
+    if not files_exist or force_download:
+        print(f"\nDownloading {model_name} model files...")
+        
+        # Download flow model
+        if config.repo_flow:
+            print(f"Downloading flow model...")
+            flow_file = hf_hub_download(config.repo_id, config.repo_flow)
+            os.rename(flow_file, flow_path)
+        
+        # Download autoencoder
+        if config.repo_ae:
+            print(f"Downloading autoencoder...")
+            ae_file = hf_hub_download(config.repo_id, config.repo_ae)
+            os.rename(ae_file, ae_path)
+        
+        # Download CLIP files
+        print(f"Downloading CLIP model...")
+        clip_config_file = hf_hub_download(config.repo_id, "text_encoder/config.json")
+        clip_model_file = hf_hub_download(config.repo_id, "text_encoder/model.safetensors")
+        
+        clip_dir = models_dir / model_name / "text_encoder"
+        clip_dir.mkdir(parents=True, exist_ok=True)
+        os.rename(clip_config_file, clip_config)
+        os.rename(clip_model_file, clip_model)
+        
+        # Download T5 files
+        print(f"Downloading T5 model...")
+        t5_config_file = hf_hub_download(config.repo_id, "text_encoder_2/config.json")
+        t5_model_index_file = hf_hub_download(config.repo_id, "text_encoder_2/model.safetensors.index.json")
+        
+        t5_dir = models_dir / model_name / "text_encoder_2"
+        t5_dir.mkdir(parents=True, exist_ok=True)
+        os.rename(t5_config_file, t5_config)
+        os.rename(t5_model_index_file, t5_model_index)
+        
+        # Download T5 model weights
+        import json
+        with open(t5_model_index) as f:
+            weight_files = set(json.load(f)["weight_map"].values())
+        
+        for w in weight_files:
+            print(f"Downloading T5 weight file: {w}")
+            weight_file = hf_hub_download(config.repo_id, f"text_encoder_2/{w}")
+            os.rename(weight_file, t5_dir / w)
+        
+        print(f"Model files downloaded successfully!")
+    
+    # Set environment variables for model paths
+    if model_name == "flux-schnell":
+        os.environ["FLUX_SCHNELL"] = str(flow_path)
+    elif model_name == "flux-dev":
+        os.environ["FLUX_DEV"] = str(flow_path)
+    os.environ["AE"] = str(ae_path)
+
 def main():
     """Main entry point"""
     try:
@@ -447,17 +688,17 @@ def main():
         listen_group.add_argument("--listen-local", action="store_true", help="Listen on local network (192.168.0.0/16, 10.0.0.0/8)")
         listen_group.add_argument("--listen", action="store_true", help="[Deprecated] Use --listen-all instead")
         
+        # Add model download options
+        parser.add_argument("--download-models", action="store_true", help="Download models if not present")
+        parser.add_argument("--force-download", action="store_true", help="Force re-download of models even if present")
+        
         args = parser.parse_args()
         
-        # Add CORS middleware
-        from fastapi.middleware.cors import CORSMiddleware
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
+        # Check and download models if requested
+        if args.download_models or args.force_download:
+            print("\nChecking model files...")
+            for model in ["flux-schnell", "flux-dev"]:
+                check_and_download_models(model, args.force_download)
         
         # Determine host based on listening flags
         if args.listen or args.listen_all:

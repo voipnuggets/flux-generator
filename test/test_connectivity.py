@@ -3,6 +3,7 @@ import sys
 import time
 import base64
 import subprocess
+import requests
 
 def run_curl(url, method="GET", data=None, timeout=30):
     """Run curl command and return response"""
@@ -26,6 +27,14 @@ def run_curl(url, method="GET", data=None, timeout=30):
         print(f"JSON decode error: {e}")
         print(f"Raw response: {result.stdout}")
         raise
+
+def test_connection():
+    """Test that the server can be connected to"""
+    try:
+        response = requests.get("http://127.0.0.1:7860/docs")
+        assert response.status_code == 200, "Server connection failed"
+    except requests.exceptions.ConnectionError:
+        assert False, "Could not connect to server"
 
 def test_connection(base_url):
     """Test connection to the Flux API server"""
