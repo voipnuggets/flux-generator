@@ -16,8 +16,9 @@ import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+import json
 
-# Global pipeline instance
+# Global pipeline instances
 flux_pipeline = None
 
 # Create FastAPI app
@@ -148,14 +149,13 @@ def to_latent_size(size: Tuple[int, int]) -> Tuple[int, int]:
 
     return (h // 8, w // 8)
 
-def init_pipeline(model="schnell", quantize=False):
+def init_pipeline(model: str):
     global flux_pipeline
+    
     if flux_pipeline is None:
-        flux_pipeline = FluxPipeline("flux-" + model)
-        if quantize:
-            nn.quantize(flux_pipeline.flow, class_predicate=quantization_predicate)
-            nn.quantize(flux_pipeline.t5, class_predicate=quantization_predicate)
-            nn.quantize(flux_pipeline.clip, class_predicate=quantization_predicate)
+        model_name = "flux-" + model
+        flux_pipeline = FluxPipeline(model_name)
+    return flux_pipeline
 
 def generate_images(
     prompt: str,
@@ -170,14 +170,15 @@ def generate_images(
     return_pil: bool = False
 ) -> List[Union[str, Image.Image]]:
     """Generate images with the given parameters"""
-    init_pipeline(model)
+    # Use original Flux pipeline
+    pipeline = init_pipeline(model)
     
     # Parse image size
-    latent_size = to_latent_size((height, width))
+    latent_size = (height // 8, width // 8)
     steps = steps or (50 if model == "dev" else 2)
-    
-    # Generate images
-    latents = flux_pipeline.generate_latents(
+
+    # Use original Flux pipeline
+    latents = pipeline.generate_latents(
         prompt,
         n_images=batch_size * n_iter,
         num_steps=steps,
@@ -196,7 +197,7 @@ def generate_images(
     # Decode images
     decoded = []
     for i in range(0, batch_size * n_iter):
-        decoded.append(flux_pipeline.decode(x_t[i:i+1], latent_size))
+        decoded.append(pipeline.decode(x_t[i:i+1], latent_size))
         mx.eval(decoded[-1])
 
     # Convert to PIL Images or base64
@@ -208,43 +209,30 @@ def generate_images(
         if return_pil:
             images.append(pil_image)
         else:
-            # Convert to base64 for API
             buffered = io.BytesIO()
             pil_image.save(buffered, format="PNG")
             img_str = base64.b64encode(buffered.getvalue()).decode()
             images.append(f"data:image/png;base64,{img_str}")
-    
+
     return images
 
 def check_model_status(model_name: str) -> str:
     """Check if model files exist and return status message"""
-    config = configs[model_name]
-    if config.repo_id is None:
-        return "❌ No repository configured"
-    
-    models_dir = Path.home() / ".flux" / "models"
-    flow_path = models_dir / f"{model_name}-flow.safetensors"
-    ae_path = models_dir / f"{model_name}-ae.safetensors"
-    clip_config = models_dir / model_name / "text_encoder/config.json"
-    clip_model = models_dir / model_name / "text_encoder/model.safetensors"
-    t5_config = models_dir / model_name / "text_encoder_2/config.json"
-    t5_model_index = models_dir / model_name / "text_encoder_2/model.safetensors.index.json"
-    
-    files_exist = all([
-        flow_path.exists(),
-        ae_path.exists(),
-        clip_config.exists(),
-        clip_model.exists(),
-        t5_config.exists(),
-        t5_model_index.exists()
-    ])
-    
-    return "✅ Downloaded" if files_exist else "❌ Not downloaded"
+    try:
+        # Use original Flux pipeline
+        pipeline = FluxPipeline(model_name)
+        pipeline.ensure_models_are_loaded()
+        return "✅ Downloaded"
+    except Exception as e:
+        print(f"Error checking model status: {str(e)}")
+        return "❌ Not downloaded"
 
 def download_model_ui(model_name: str, force: bool = False) -> str:
     """Download model files from UI"""
     try:
-        check_and_download_models(model_name, force)
+        # Use original Flux pipeline
+        pipeline = FluxPipeline(model_name)
+        pipeline.ensure_models_are_loaded()
         return f"✅ Successfully downloaded {model_name} model"
     except Exception as e:
         return f"❌ Error downloading {model_name} model: {str(e)}"
@@ -256,10 +244,39 @@ def create_ui():
         .prompt-box { min-height: 100px; }
         .status-box { margin-top: 10px; }
         .generate-btn { min-height: 60px; }
+        .model-status { margin: 10px 0; padding: 10px; border-radius: 5px; background: #f5f5f5; }
     """
     
     blocks = gr.Blocks(theme=gr.themes.Soft(), css=css)
     with blocks:
+        # Model Management in Sidebar
+        with gr.Sidebar():
+            gr.Markdown("### 📦 Model Management")
+            
+            # Flux Schnell Model
+            with gr.Group(elem_classes="model-status"):
+                gr.Markdown("#### Flux Schnell")
+                schnell_status = gr.Markdown(value=check_model_status("flux-schnell"))
+                with gr.Row():
+                    schnell_download = gr.Button("📥 Download Model")
+                    schnell_force = gr.Checkbox(label="Force Download", value=False)
+            
+            # Flux Dev Model
+            with gr.Group(elem_classes="model-status"):
+                gr.Markdown("#### Flux Dev")
+                dev_status = gr.Markdown(value=check_model_status("flux-dev"))
+                with gr.Row():
+                    dev_download = gr.Button("📥 Download Model")
+                    dev_force = gr.Checkbox(label="Force Download", value=False)
+            
+            download_status = gr.Textbox(
+                label="Download Status",
+                value="",
+                lines=2,
+                interactive=False
+            )
+        
+        # Main Content
         with gr.Column(elem_classes="container"):
             gr.Markdown(
                 """
@@ -268,130 +285,107 @@ def create_ui():
                 """
             )
             
-            with gr.Tabs():
-                # Model Management Tab
-                with gr.Tab("📦 Model Management", id="model_tab"):
-                    with gr.Column():
-                        gr.Markdown("### Model Status")
-                        with gr.Row():
-                            with gr.Column():
-                                schnell_status = gr.Textbox(
-                                    label="Flux Schnell Status",
-                                    value=check_model_status("flux-schnell"),
-                                    interactive=False
-                                )
-                                download_schnell = gr.Button(
-                                    "📥 Download Schnell Model",
-                                    variant="primary"
-                                )
-                            
-                            with gr.Column():
-                                dev_status = gr.Textbox(
-                                    label="Flux Dev Status",
-                                    value=check_model_status("flux-dev"),
-                                    interactive=False
-                                )
-                                download_dev = gr.Button(
-                                    "📥 Download Dev Model",
-                                    variant="primary"
-                                )
+            with gr.Row():
+                # Left Column - Controls
+                with gr.Column(scale=1):
+                    # Generation Controls
+                    prompt = gr.Textbox(
+                        label="Prompt",
+                        placeholder="Enter your prompt here... (e.g., 'a beautiful moonset over the ocean, highly detailed, 4k')",
+                        lines=3,
+                        elem_classes="prompt-box"
+                    )
+                    
+                    with gr.Group():
+                        gr.Markdown("### ⚙️ Model Settings")
+                        model_type = gr.Radio(
+                            choices=["schnell", "dev"],
+                            value="schnell",
+                            label="Model Type",
+                            info="Schnell (2 steps) is faster, Dev (50 steps) is higher quality"
+                        )
                         
                         with gr.Row():
-                            force_download = gr.Checkbox(
-                                label="Force Re-download",
-                                value=False,
-                                info="Check this to re-download even if model files exist"
+                            num_steps = gr.Slider(
+                                minimum=2,
+                                maximum=100,
+                                step=1,
+                                value=None,
+                                label="Steps",
+                                info="Leave empty for default (2 for Schnell, 50 for Dev)"
+                            )
+                            guidance = gr.Slider(
+                                minimum=1.0,
+                                maximum=20.0,
+                                step=0.5,
+                                value=4.0,
+                                label="Guidance Scale",
+                                info="Higher values = stronger adherence to prompt"
+                            )
+                    
+                    # Add model-specific parameter updates
+                    def update_model_params(model):
+                        if model == "dev":
+                            return {
+                                num_steps: gr.update(value=50, minimum=2, maximum=100, interactive=True),
+                                guidance: gr.update(value=4.0, interactive=True)
+                            }
+                        else:  # schnell
+                            return {
+                                num_steps: gr.update(value=2, minimum=2, maximum=100, interactive=True),
+                                guidance: gr.update(value=4.0, interactive=True)
+                            }
+                    
+                    # Connect the model selection to parameter updates
+                    model_type.change(
+                        fn=update_model_params,
+                        inputs=[model_type],
+                        outputs=[num_steps, guidance]
+                    )
+                    
+                    with gr.Group():
+                        gr.Markdown("### 🖼️ Image Settings")
+                        with gr.Row():
+                            image_width = gr.Slider(
+                                minimum=256,
+                                maximum=1024,
+                                step=64,
+                                value=512,
+                                label="Width"
+                            )
+                            image_height = gr.Slider(
+                                minimum=256,
+                                maximum=1024,
+                                step=64,
+                                value=512,
+                                label="Height"
                             )
                         
-                        download_status = gr.Textbox(
-                            label="Download Status",
-                            value="",
-                            interactive=False,
-                            elem_classes="status-box"
+                            seed = gr.Number(
+                                label="Seed",
+                                value=None,
+                                precision=0,
+                                info="Leave empty for random seed"
+                            )
+                        
+                        generate_btn = gr.Button(
+                            "🎨 Generate Image",
+                            variant="primary",
+                            elem_classes="generate-btn"
                         )
                 
-                # Image Generation Tab
-                with gr.Tab("🖼️ Generate", id="generate_tab"):
-                    with gr.Row():
-                        # Left Column - Controls
-                        with gr.Column():
-                            prompt = gr.Textbox(
-                                label="Prompt",
-                                placeholder="Enter your prompt here... (e.g., 'a beautiful moonset over the ocean, highly detailed, 4k')",
-                                lines=3,
-                                elem_classes="prompt-box"
-                            )
-                            
-                            with gr.Group():
-                                gr.Markdown("### Model Settings")
-                                model_type = gr.Radio(
-                                    choices=["schnell", "dev"],
-                                    value="schnell",
-                                    label="Model Type",
-                                    info="Schnell (2 steps) is faster, Dev (50 steps) is higher quality"
-                                )
-                                
-                                with gr.Row():
-                                    num_steps = gr.Slider(
-                                        minimum=2,
-                                        maximum=100,
-                                        step=1,
-                                        value=None,
-                                        label="Steps",
-                                        info="Leave empty for default (2 for Schnell, 50 for Dev)"
-                                    )
-                                    guidance = gr.Slider(
-                                        minimum=1.0,
-                                        maximum=20.0,
-                                        step=0.5,
-                                        value=4.0,
-                                        label="Guidance Scale",
-                                        info="Higher values = stronger adherence to prompt"
-                                    )
-                            
-                            with gr.Group():
-                                gr.Markdown("### Image Settings")
-                                with gr.Row():
-                                    image_width = gr.Slider(
-                                        minimum=256,
-                                        maximum=1024,
-                                        step=64,
-                                        value=512,
-                                        label="Width"
-                                    )
-                                    image_height = gr.Slider(
-                                        minimum=256,
-                                        maximum=1024,
-                                        step=64,
-                                        value=512,
-                                        label="Height"
-                                    )
-                                
-                                seed = gr.Number(
-                                    label="Seed",
-                                    value=None,
-                                    precision=0,
-                                    info="Leave empty for random seed"
-                                )
-                            
-                            generate_btn = gr.Button(
-                                "🎨 Generate Image",
-                                variant="primary",
-                                elem_classes="generate-btn"
-                            )
-                        
-                        # Right Column - Output
-                        with gr.Column():
-                            output_image = gr.Image(
-                                label="Generated Image",
-                                type="pil",
-                                show_download_button=True,
-                                show_label=True
-                            )
-                            image_info = gr.Markdown(
-                                visible=True,
-                                value="*Click 'Generate Image' to create a new image*"
-                            )
+                # Right Column - Output
+                with gr.Column(scale=1):
+                    output_image = gr.Image(
+                        label="Generated Image",
+                        type="pil",
+                        show_download_button=True,
+                        show_label=True
+                    )
+                    image_info = gr.Markdown(
+                        visible=True,
+                        value="*Click 'Generate Image' to create a new image*"
+                    )
             
             # Event handlers
             def on_generate(prompt, model_type, num_steps, guidance_scale, width, height, seed):
@@ -438,6 +432,22 @@ def create_ui():
                 finally:
                     print("=== Generation Request Ended ===\n")
             
+            def on_model_download(model_name: str, force: bool = False) -> Tuple[str, str]:
+                """Handle model download and update status"""
+                try:
+                    check_and_download_models(model_name, force)
+                    status = check_model_status(model_name)
+                    return [
+                        status,
+                        f"✅ Successfully downloaded {model_name} model"
+                    ]
+                except Exception as e:
+                    return [
+                        check_model_status(model_name),
+                        f"❌ Error downloading {model_name} model: {str(e)}"
+                    ]
+            
+            # Connect event handlers
             generate_btn.click(
                 fn=on_generate,
                 inputs=[
@@ -456,107 +466,85 @@ def create_ui():
             )
             
             # Model download handlers
-            download_schnell.click(
-                fn=lambda force: download_model_ui("flux-schnell", force),
-                inputs=[force_download],
-                outputs=[download_status]
-            ).then(
-                fn=lambda: check_model_status("flux-schnell"),
-                outputs=[schnell_status]
+            schnell_download.click(
+                fn=lambda force: on_model_download("flux-schnell", force),
+                inputs=[schnell_force],
+                outputs=[schnell_status, download_status]
             )
             
-            download_dev.click(
-                fn=lambda force: download_model_ui("flux-dev", force),
-                inputs=[force_download],
-                outputs=[download_status]
-            ).then(
-                fn=lambda: check_model_status("flux-dev"),
-                outputs=[dev_status]
+            dev_download.click(
+                fn=lambda force: on_model_download("flux-dev", force),
+                inputs=[dev_force],
+                outputs=[dev_status, download_status]
             )
     
     return blocks
 
 def check_and_download_models(model_name: str, force_download: bool = False):
-    """Check if model files exist and download if needed"""
+    """Download model files from HuggingFace Hub if they don't exist"""
     config = configs[model_name]
     if config.repo_id is None:
         raise ValueError(f"No repository configured for model {model_name}")
     
-    # Create models directory if it doesn't exist
-    models_dir = Path.home() / ".flux" / "models"
-    models_dir.mkdir(parents=True, exist_ok=True)
+    # Check in HuggingFace cache directory
+    cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+    model_cache = cache_dir / f"models--black-forest-labs--{model_name}"
     
-    # Define paths for model files
-    flow_path = models_dir / f"{model_name}-flow.safetensors"
-    ae_path = models_dir / f"{model_name}-ae.safetensors"
-    clip_config = models_dir / model_name / "text_encoder/config.json"
-    clip_model = models_dir / model_name / "text_encoder/model.safetensors"
-    t5_config = models_dir / model_name / "text_encoder_2/config.json"
-    t5_model_index = models_dir / model_name / "text_encoder_2/model.safetensors.index.json"
+    # Create directories if they don't exist
+    model_cache.mkdir(parents=True, exist_ok=True)
     
-    # Check if files exist
-    files_exist = all([
-        flow_path.exists(),
-        ae_path.exists(),
-        clip_config.exists(),
-        clip_model.exists(),
-        t5_config.exists(),
-        t5_model_index.exists()
-    ])
-    
-    if not files_exist or force_download:
-        print(f"\nDownloading {model_name} model files...")
+    try:
+        # Download model files
+        print(f"Downloading {model_name} model files...")
         
         # Download flow model
-        if config.repo_flow:
-            print(f"Downloading flow model...")
-            flow_file = hf_hub_download(config.repo_id, config.repo_flow)
-            os.rename(flow_file, flow_path)
+        if force_download or not (model_cache / "snapshots" / "main" / f"{model_name}-flow.safetensors").exists():
+            flow_path = hf_hub_download(config.repo_id, config.repo_flow)
+            print(f"✓ Downloaded flow model: {flow_path}")
         
         # Download autoencoder
-        if config.repo_ae:
-            print(f"Downloading autoencoder...")
-            ae_file = hf_hub_download(config.repo_id, config.repo_ae)
-            os.rename(ae_file, ae_path)
+        if force_download or not (model_cache / "snapshots" / "main" / "ae.safetensors").exists():
+            ae_path = hf_hub_download(config.repo_id, config.repo_ae)
+            print(f"✓ Downloaded autoencoder: {ae_path}")
         
-        # Download CLIP files
-        print(f"Downloading CLIP model...")
-        clip_config_file = hf_hub_download(config.repo_id, "text_encoder/config.json")
-        clip_model_file = hf_hub_download(config.repo_id, "text_encoder/model.safetensors")
+        # Download CLIP text encoder
+        if force_download or not (model_cache / "text_encoder").exists():
+            clip_config = hf_hub_download(config.repo_id, "text_encoder/config.json")
+            clip_model = hf_hub_download(config.repo_id, "text_encoder/model.safetensors")
+            print(f"✓ Downloaded CLIP text encoder")
         
-        clip_dir = models_dir / model_name / "text_encoder"
-        clip_dir.mkdir(parents=True, exist_ok=True)
-        os.rename(clip_config_file, clip_config)
-        os.rename(clip_model_file, clip_model)
+        # Download T5 text encoder
+        if force_download or not (model_cache / "text_encoder_2").exists():
+            t5_config = hf_hub_download(config.repo_id, "text_encoder_2/config.json")
+            t5_model_index = hf_hub_download(config.repo_id, "text_encoder_2/model.safetensors.index.json")
+            
+            # Load model index to get weight files
+            with open(t5_model_index) as f:
+                weight_files = set()
+                for _, w in json.load(f)["weight_map"].items():
+                    weight_files.add(w)
+            
+            # Download each weight file
+            for w in weight_files:
+                w = f"text_encoder_2/{w}"
+                hf_hub_download(config.repo_id, w)
+            print(f"✓ Downloaded T5 text encoder")
         
-        # Download T5 files
-        print(f"Downloading T5 model...")
-        t5_config_file = hf_hub_download(config.repo_id, "text_encoder_2/config.json")
-        t5_model_index_file = hf_hub_download(config.repo_id, "text_encoder_2/model.safetensors.index.json")
+        # Set environment variables for model paths
+        if model_name == "flux-schnell":
+            os.environ["FLUX_SCHNELL"] = str(model_cache / "snapshots" / "main" / "flux1-schnell.safetensors")
+        elif model_name == "flux-dev":
+            os.environ["FLUX_DEV"] = str(model_cache / "snapshots" / "main" / "flux1-dev.safetensors")
         
-        t5_dir = models_dir / model_name / "text_encoder_2"
-        t5_dir.mkdir(parents=True, exist_ok=True)
-        os.rename(t5_config_file, t5_config)
-        os.rename(t5_model_index_file, t5_model_index)
+        # Set autoencoder path
+        os.environ["AE"] = str(model_cache / "snapshots" / "main" / "ae.safetensors")
         
-        # Download T5 model weights
-        import json
-        with open(t5_model_index) as f:
-            weight_files = set(json.load(f)["weight_map"].values())
+        print(f"✅ Successfully downloaded and configured {model_name}")
+        return True
         
-        for w in weight_files:
-            print(f"Downloading T5 weight file: {w}")
-            weight_file = hf_hub_download(config.repo_id, f"text_encoder_2/{w}")
-            os.rename(weight_file, t5_dir / w)
-        
-        print(f"Model files downloaded successfully!")
-    
-    # Set environment variables for model paths
-    if model_name == "flux-schnell":
-        os.environ["FLUX_SCHNELL"] = str(flow_path)
-    elif model_name == "flux-dev":
-        os.environ["FLUX_DEV"] = str(flow_path)
-    os.environ["AE"] = str(ae_path)
+    except Exception as e:
+        print(f"❌ Error downloading {model_name}: {str(e)}")
+        raise
 
 def check_port_available(host: str, port: int) -> bool:
     """Check if a port is available on the given host"""
@@ -592,8 +580,8 @@ def main():
         # Parse command line arguments
         parser = argparse.ArgumentParser(description="FLUX Image Generator")
         parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to run the server on")
-        parser.add_argument("--port", type=int, default=7860, help="Port to run the server on")
-        parser.add_argument("--api-port", type=int, default=7861, help="Port for the API server")
+        parser.add_argument("--port", type=int, default=7861, help="Port to run the UI server on")
+        parser.add_argument("--api-port", type=int, default=7860, help="Port for the API server")
         
         # Add mutually exclusive group for listening options
         listen_group = parser.add_mutually_exclusive_group()
@@ -627,13 +615,13 @@ def main():
         
         # Check port availability and find alternative ports if needed
         try:
-            ui_port = find_available_port(host, args.port)
             api_port = find_available_port(host, args.api_port)
+            ui_port = find_available_port(host, args.port)
             
-            if ui_port != args.port:
-                print(f"\nWarning: UI port {args.port} is in use, using port {ui_port} instead")
             if api_port != args.api_port:
-                print(f"Warning: API port {args.api_port} is in use, using port {api_port} instead")
+                print(f"\nWarning: API port {args.api_port} is in use, using port {api_port} instead")
+            if ui_port != args.port:
+                print(f"Warning: UI port {args.port} is in use, using port {ui_port} instead")
         except RuntimeError as e:
             print(f"Error: {e}")
             print("Please try different port numbers or free up some ports")
@@ -643,8 +631,8 @@ def main():
         demo = create_ui()
         
         print(f"\nStarting Flux servers:")
-        print(f"1. UI server:  {host}:{ui_port}")
-        print(f"2. API server: {host}:{api_port}")
+        print(f"1. API server: {host}:{api_port}")
+        print(f"2. UI server:  {host}:{ui_port}")
         print("\nAccess modes:")
         print("1. Local only:     default                  (most secure, localhost only)")
         print("2. Local network:  --listen-local          (allows LAN access)")

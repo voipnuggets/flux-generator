@@ -38,4 +38,27 @@ ENV/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Generated files
+*.png
+out/
+generated/
+
+# MLX and model files
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+.cache/ 
