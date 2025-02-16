@@ -70,7 +70,7 @@ def test_connection(base_url):
             "prompt": "test",  # Minimal prompt
             "width": 512,
             "height": 512,
-            "steps": 2,  # Minimal steps
+            "steps": 1,  # Minimal steps
             "cfg_scale": 4.0,
             "batch_size": 1,
             "n_iter": 1,

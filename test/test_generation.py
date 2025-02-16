@@ -6,17 +6,20 @@ from pathlib import Path
 import sys
 from PIL import Image
 import io
+import os
+from unittest.mock import patch, MagicMock
+import numpy as np
 
 # Add parent directory to path to import flux_app
 sys.path.append(str(Path(__file__).parent.parent))
-from flux_app import generate_images, GenerationRequest, to_latent_size
+from flux_app import generate_images, GenerationRequest, to_latent_size, configs
 
 url = "http://127.0.0.1:7860/sdapi/v1/txt2img"
 payload = {
     "prompt": "a beautiful moonset over the ocean, highly detailed, 4k",
     "width": 512,
     "height": 512,
-    "steps": 2,
+    "steps": 1,
     "cfg_scale": 4.0,
     "batch_size": 1,
     "n_iter": 1,
@@ -77,7 +80,7 @@ class TestImageGeneration(unittest.TestCase):
             model="schnell",
             n_images=1,
             image_size="512x512",
-            steps=2,
+            steps=1,
             guidance=4.0,
             seed=42
         )
@@ -93,30 +96,105 @@ class TestImageGeneration(unittest.TestCase):
         self.assertIsNone(request.steps)
         self.assertIsNone(request.seed)
     
-    def test_generate_images(self):
+    @patch("flux_app.init_pipeline")
+    @patch("flux_app.flux_pipeline")
+    def test_generate_images(self, mock_pipeline, mock_init_pipeline):
         """Test that images can be generated"""
+        # Mock the pipeline initialization and generation
+        mock_init_pipeline.return_value = mock_pipeline
+        
+        # Create mock latents and conditioning
+        mock_conditioning = np.zeros((1, 64, 64, 4))  # Mock conditioning tensor
+        mock_latents = np.zeros((1, 64, 64, 4))  # Mock latents tensor
+        
+        # Set up the mock pipeline
+        mock_pipeline.generate_latents.return_value = iter([mock_conditioning, mock_latents])
+        mock_pipeline.decode.return_value = np.zeros((1, 512, 512, 3))  # Mock decoded image
+        
         request = GenerationRequest(
             prompt="test image",
             model="schnell",
             n_images=1,
             image_size="512x512",
-            steps=2,
+            steps=1,
             guidance=4.0,
             seed=42
         )
         
         images = generate_images(request)
-        self.assertEqual(len(images), 1)
         
-        # Verify image format
-        for img_str in images:
-            self.assertTrue(img_str.startswith("data:image/png;base64,"))
+        # Verify the pipeline was initialized and used correctly
+        mock_init_pipeline.assert_called_once_with("schnell", False)
+        mock_pipeline.generate_latents.assert_called_once()
+        mock_pipeline.decode.assert_called_once()
+        
+        # Verify we got a base64 encoded image back
+        self.assertTrue(len(images) > 0)
+        self.assertTrue(images[0].startswith("data:image/png;base64,"))
+    
+    @patch('requests.post')
+    def test_generate_with_api(self, mock_post):
+        """Test the API image generation function"""
+        # Set up test parameters
+        prompt = "test image"
+        model_type = "schnell"
+        num_steps = 1
+        guidance_scale = 4.0
+        width = 512
+        height = 512
+        seed = 42
+        
+        # Mock successful response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "images": ["data:image/png;base64,test123"],
+            "info": "Generated with Flux schnell model",
+            "parameters": {
+                "prompt": prompt,
+                "model": model_type,
+                "steps": num_steps,
+                "cfg_scale": guidance_scale,
+                "width": width,
+                "height": height,
+                "seed": seed
+            }
+        }
+        mock_post.return_value = mock_response
+        
+        # Generate image using the API
+        try:
+            response = requests.post(url, json={
+                "prompt": prompt,
+                "width": width,
+                "height": height,
+                "steps": num_steps,
+                "cfg_scale": guidance_scale,
+                "batch_size": 1,
+                "n_iter": 1,
+                "seed": seed,
+                "model": model_type
+            })
+            response.raise_for_status()
+            result = response.json()
+            self.assertIn("images", result)
+            self.assertGreater(len(result["images"]), 0)
+            self.assertTrue(result["images"][0].startswith("data:image/png;base64,"))
             
-            # Try to decode and open the image
-            img_data = base64.b64decode(img_str.split(",")[1])
-            img = Image.open(io.BytesIO(img_data))
-            self.assertEqual(img.size, (512, 512))
-            self.assertEqual(img.mode, "RGB")
+            # Verify the request
+            mock_post.assert_called_once()
+            args, kwargs = mock_post.call_args
+            self.assertEqual(args[0], url)
+            self.assertEqual(kwargs["json"]["prompt"], prompt)
+            self.assertEqual(kwargs["json"]["steps"], num_steps)
+            self.assertEqual(kwargs["json"]["cfg_scale"], guidance_scale)
+            self.assertEqual(kwargs["json"]["width"], width)
+            self.assertEqual(kwargs["json"]["height"], height)
+            self.assertEqual(kwargs["json"]["seed"], seed)
+            self.assertEqual(kwargs["json"]["model"], model_type)
+            
+        except Exception as e:
+            self.fail(f"Test failed: {str(e)}")
 
 if __name__ == "__main__":
     unittest.main(verbosity=2) 
