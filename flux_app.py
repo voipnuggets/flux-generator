@@ -518,7 +518,14 @@ def create_ui():
                     print(f"Guidance: {guidance_scale}")
                     print(f"Size: {width}x{height}")
                     print(f"Seed: {seed}")
-                    
+
+                    # Reset peak memory tracking
+                    mx.metal.reset_peak_memory()
+
+                    # Track timing
+                    import time
+                    start_total = time.time()
+
                     # Create API request
                     request = SDAPIRequest(
                         prompt=prompt,
@@ -532,41 +539,71 @@ def create_ui():
                         n_iter=1
                     )
                     
-                    # Call API
-                    response = await api.txt2img(request)
+                    # Initialize pipeline if needed
+                    start_text = time.time()
+                    pipeline = api.init_pipeline(model_type)
                     
-                    # Convert base64 to PIL Image
-                    image_data = base64.b64decode(response.images[0].split(",")[1])
-                    pil_image = Image.open(io.BytesIO(image_data))
-                    
-                    # Get pipeline instance and stats
-                    pipeline = api.pipeline
-                    
-                    # Get peak memory usage from MLX
+                    # Text encoding (includes pipeline initialization)
                     text_mem = mx.metal.get_peak_memory() / 1024**3
+                    text_time = time.time() - start_text
                     mx.metal.reset_peak_memory()
+                    
+                    # Generation
+                    start_gen = time.time()
+                    latents = pipeline.generate_latents(
+                        prompt,
+                        n_images=1,
+                        num_steps=num_steps or (50 if model_type == "dev" else 2),
+                        latent_size=(height // 8, width // 8),
+                        guidance=guidance_scale,
+                        seed=seed if seed is not None else None
+                    )
+                    
+                    # Process latents
+                    conditioning = next(latents)
+                    mx.eval(conditioning)
+                    
+                    for x_t in latents:
+                        mx.eval(x_t)
+                    
                     gen_mem = mx.metal.get_peak_memory() / 1024**3
+                    gen_time = time.time() - start_gen
                     mx.metal.reset_peak_memory()
+                    
+                    # Decoding
+                    start_decode = time.time()
+                    decoded = []
+                    for i in range(1):  # Single image for now
+                        decoded.append(pipeline.decode(x_t[i:i+1], (height // 8, width // 8)))
+                        mx.eval(decoded[-1])
+                    
                     decode_mem = mx.metal.get_peak_memory() / 1024**3
-                    total_mem = max(text_mem, gen_mem, decode_mem)
+                    decode_time = time.time() - start_decode
+                    total_time = time.time() - start_total
+                    
+                    # Convert to PIL Image
+                    img_array = (mx.array(decoded[0][0]) * 255).astype(mx.uint8)
+                    pil_image = Image.fromarray(np.array(img_array))
                     
                     # Format stats strings
                     stats = {
                         "text_mem": f"**Text Encoding Memory:** {text_mem:.2f}GB",
                         "gen_mem": f"**Generation Memory:** {gen_mem:.2f}GB",
                         "decode_mem": f"**Decoding Memory:** {decode_mem:.2f}GB",
-                        "total_mem": f"**Total Peak Memory:** {total_mem:.2f}GB",
-                        "text_time": f"**Text Encoding Time:** {0.0:.2f}s",
-                        "gen_time": f"**Generation Time:** {0.0:.2f}s",
-                        "decode_time": f"**Decoding Time:** {0.0:.2f}s",
-                        "total_time": f"**Total Time:** {0.0:.2f}s"
+                        "total_mem": f"**Total Peak Memory:** {max(text_mem, gen_mem, decode_mem):.2f}GB",
+                        "text_time": f"**Text Encoding Time:** {text_time:.2f}s",
+                        "gen_time": f"**Generation Time:** {gen_time:.2f}s",
+                        "decode_time": f"**Decoding Time:** {decode_time:.2f}s",
+                        "total_time": f"**Total Time:** {total_time:.2f}s"
                     }
                     
                     print("Generation completed successfully")
+                    print(f"Memory usage: Text={text_mem:.2f}GB, Gen={gen_mem:.2f}GB, Decode={decode_mem:.2f}GB")
+                    print(f"Timing: Text={text_time:.2f}s, Gen={gen_time:.2f}s, Decode={decode_time:.2f}s, Total={total_time:.2f}s")
                     
                     return [
                         pil_image,  # Image
-                        gr.Markdown(value=response.info),  # Info
+                        gr.Markdown(value=f"Generated with Flux {model_type} model"),  # Info
                         gr.Group(visible=True),  # Stats group visibility
                         *[gr.Markdown(value=v) for v in stats.values()]  # Stats values
                     ]
