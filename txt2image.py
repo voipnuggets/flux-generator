@@ -49,7 +49,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--image-size", type=lambda x: tuple(map(int, x.split("x"))), default=(512, 512)
     )
-    parser.add_argument("--steps", type=int)
+    parser.add_argument("--steps", type=int, help="Number of steps (min: 1, default: 2 for schnell, 50 for dev)")
     parser.add_argument("--guidance", type=float, default=4.0)
     parser.add_argument("--n-rows", type=int, default=1)
     parser.add_argument("--decoding-batch-size", type=int, default=1)
@@ -64,9 +64,14 @@ if __name__ == "__main__":
     parser.add_argument("--no-t5-padding", dest="t5_padding", action="store_false")
     args = parser.parse_args()
 
-    # Load the models
-    flux = FluxPipeline("flux-" + args.model, t5_padding=args.t5_padding)
+    # Validate and set steps
+    if args.steps is not None and args.steps < 1:
+        parser.error("Number of steps must be at least 1")
     args.steps = args.steps or (50 if args.model == "dev" else 2)
+
+    # Load the models
+    model_name = "flux-" + args.model
+    flux = FluxPipeline(model_name, t5_padding=args.t5_padding)
 
     if args.adapter:
         load_adapter(flux, args.adapter, fuse=args.fuse_adapter)

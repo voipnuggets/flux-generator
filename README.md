@@ -23,29 +23,41 @@ Parameters:
 
 ## Installation
 
+```bash
 pip install -r requirements.txt
+```
 
 ## Usage
 
-Run the Gradio interface:
-```bash
-python gradio_app.py
-```
-
-Run the FastAPI server:
+Run the unified server with both UI and API:
 ```bash
 # For local use only (most secure):
-python3.11 flux_app.py --enable-api
+python3.11 flux_app.py
 
 # For local network access (LAN only):
-python3.11 flux_app.py --enable-api --listen-local
+python3.11 flux_app.py --listen-local
 
 # For all network access (including Docker):
-python3.11 flux_app.py --enable-api --listen-all
+python3.11 flux_app.py --listen-all
+```
+
+### Command Line Options
+
+```bash
+python3.11 flux_app.py [OPTIONS]
+
+Options:
+  --host TEXT          Host to run the server on (default: 127.0.0.1)
+  --port INTEGER       Port to run the server on (default: 7860)
+  --listen-all         Listen on all network interfaces (0.0.0.0)
+  --listen-local       Listen on local network (192.168.0.0/16, 10.0.0.0/8)
+  --download-models    Download models if not present
+  --force-download     Force re-download of models even if present
+  --help              Show this message and exit
 ```
 
 ### Command Line Interface
-Generate images using the command line:
+For command-line image generation:
 
 ```bash
 python3.11 txt2image.py --model schnell \
@@ -62,19 +74,20 @@ python3.11 txt2image.py --model schnell \
 - Customizable image size and generation parameters
 - Memory usage reporting
 - Stable Diffusion API compatibility for third-party UIs
+- Unified server for both UI and API
 - Configurable network access modes
 
 ## API Integration
 
 The application provides a Stable Diffusion-compatible API that can be used with third-party UIs like Open WebUI.
 
-### Starting the API Server
+### Starting the Server
 
 The server supports three access modes with different security levels:
 
 1. Local Only (Most Secure):
    ```bash
-   python3.11 flux_app.py --enable-api
+   python3.11 flux_app.py
    ```
    - Only allows connections from localhost (127.0.0.1)
    - Best for local development and testing
@@ -82,7 +95,7 @@ The server supports three access modes with different security levels:
 
 2. Local Network:
    ```bash
-   python3.11 flux_app.py --enable-api --listen-local
+   python3.11 flux_app.py --listen-local
    ```
    - Allows connections from your local network (LAN)
    - Good for accessing from other devices on your network
@@ -90,19 +103,19 @@ The server supports three access modes with different security levels:
 
 3. All Networks:
    ```bash
-   python3.11 flux_app.py --enable-api --listen-all
+   python3.11 flux_app.py --listen-all
    ```
    - Allows connections from any network interface
    - Required for Docker integration
    - Less secure, use only in trusted networks
 
-The server will start on port 7860 (configurable with `--api-port`).
+The server will start on port 7860 (configurable with `--port`).
 
 ### Docker Integration with Open WebUI
 
-1. Start the Flux API server on your host machine:
+1. Start the Flux server on your host machine:
    ```bash
-   python3.11 flux_app.py --enable-api --listen-all
+   python3.11 flux_app.py --listen-all
    ```
    Note: Docker integration requires `--listen-all` to allow container access.
 
@@ -195,20 +208,9 @@ if result["images"]:
         f.write(image_data)
 ```
 
-## Notes
+## Model Management
 
-- The API is designed to be compatible with Stable Diffusion Web UI's API format
-- Default port is 7860, can be changed with `--api-port`
-- Three network access modes available:
-  - `--enable-api`: Local only (most secure)
-  - `--listen-local`: Local network access
-  - `--listen-all`: All network access (required for Docker)
-- CORS is enabled to allow requests from web UIs
-- The schnell model uses 2 steps by default, while the dev model uses 50 steps
-
-# Model Management
-
-The Flux API server requires model files to be downloaded before use. You can download the models in two ways:
+The Flux server requires model files to be downloaded before use. You can download the models in two ways:
 
 1. Automatic download on first use:
    - Models will be downloaded automatically when you first try to generate an image
@@ -223,35 +225,4 @@ The Flux API server requires model files to be downloaded before use. You can do
    python3.11 flux_app.py --force-download
    ```
 
-Model files are stored in `~/.flux/models/` directory.
-
-# Running the Server
-
-You can run the Flux server in different modes depending on your needs:
-
-1. Local Only (Most Secure):
-   ```bash
-   python3.11 flux_app.py --enable-api
-   ```
-   - Only allows connections from localhost
-   - Best for local development and testing
-
-2. Local Network:
-   ```bash
-   python3.11 flux_app.py --enable-api --listen-local
-   ```
-   - Allows connections from your local network (192.168.0.0/16, 10.0.0.0/8)
-   - Useful for accessing from other devices on your network
-
-3. All Networks:
-   ```bash
-   python3.11 flux_app.py --enable-api --listen-all
-   ```
-   - Allows connections from any IP address
-   - Required for Docker container access
-   - Use with caution, only on trusted networks
-
-Additional options:
-- `--api-port PORT`: Change the server port (default: 7860)
-- `--download-models`: Download required models if not present
-- `--force-download`: Force re-download of models
+Model files are stored in the HuggingFace cache directory (`~/.cache/huggingface/hub/`).
