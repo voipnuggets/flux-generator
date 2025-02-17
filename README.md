@@ -73,13 +73,13 @@ python3.11 txt2image.py --model schnell \
 - Multiple model options (schnell/dev)
 - Customizable image size and generation parameters
 - Memory usage reporting
-- Stable Diffusion API compatibility for third-party UIs
+- API compatibility for third-party UIs like Open WebUI
 - Unified server for both UI and API
 - Configurable network access modes
 
 ## API Integration
 
-The application provides a Stable Diffusion-compatible API that can be used with third-party UIs like Open WebUI.
+The application provides an API that can be used with third-party UIs like Open WebUI.
 
 ### Starting the Server
 
