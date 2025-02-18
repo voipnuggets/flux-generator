@@ -239,93 +239,6 @@ def to_latent_size(size: Tuple[int, int]) -> Tuple[int, int]:
 
     return (h // 8, w // 8)
 
-def check_model_status(model_name: str) -> str:
-    """Check if model files exist and return status message"""
-    try:
-        # Use original Flux pipeline
-        pipeline = FluxPipeline(model_name)
-        pipeline.ensure_models_are_loaded()
-        return "✅ Downloaded"
-    except Exception as e:
-        print(f"Error checking model status: {str(e)}")
-        return "❌ Not downloaded"
-
-def download_model_ui(model_name: str, force: bool = False) -> str:
-    """Download model files from UI"""
-    try:
-        # Use original Flux pipeline
-        pipeline = FluxPipeline(model_name)
-        pipeline.ensure_models_are_loaded()
-        return f"✅ Successfully downloaded {model_name} model"
-    except Exception as e:
-        return f"❌ Error downloading {model_name} model: {str(e)}"
-
-def check_and_download_models(model_name: str, force_download: bool = False):
-    """Download model files from HuggingFace Hub if they don't exist"""
-    config = configs[model_name]
-    if config.repo_id is None:
-        raise ValueError(f"No repository configured for model {model_name}")
-    
-    # Check in HuggingFace cache directory
-    cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
-    model_cache = cache_dir / f"models--black-forest-labs--{model_name}"
-    
-    # Create directories if they don't exist
-    model_cache.mkdir(parents=True, exist_ok=True)
-    
-    try:
-        # Download model files
-        print(f"Downloading {model_name} model files...")
-        
-        # Download flow model
-        if force_download or not (model_cache / "snapshots" / "main" / f"{model_name}-flow.safetensors").exists():
-            flow_path = hf_hub_download(config.repo_id, config.repo_flow)
-            print(f"✓ Downloaded flow model: {flow_path}")
-        
-        # Download autoencoder
-        if force_download or not (model_cache / "snapshots" / "main" / "ae.safetensors").exists():
-            ae_path = hf_hub_download(config.repo_id, config.repo_ae)
-            print(f"✓ Downloaded autoencoder: {ae_path}")
-        
-        # Download CLIP text encoder
-        if force_download or not (model_cache / "text_encoder").exists():
-            clip_config = hf_hub_download(config.repo_id, "text_encoder/config.json")
-            clip_model = hf_hub_download(config.repo_id, "text_encoder/model.safetensors")
-            print(f"✓ Downloaded CLIP text encoder")
-        
-        # Download T5 text encoder
-        if force_download or not (model_cache / "text_encoder_2").exists():
-            t5_config = hf_hub_download(config.repo_id, "text_encoder_2/config.json")
-            t5_model_index = hf_hub_download(config.repo_id, "text_encoder_2/model.safetensors.index.json")
-            
-            # Load model index to get weight files
-            with open(t5_model_index) as f:
-                weight_files = set()
-                for _, w in json.load(f)["weight_map"].items():
-                    weight_files.add(w)
-            
-            # Download each weight file
-            for w in weight_files:
-                w = f"text_encoder_2/{w}"
-                hf_hub_download(config.repo_id, w)
-            print(f"✓ Downloaded T5 text encoder")
-        
-        # Set environment variables for model paths
-        if model_name == "flux-schnell":
-            os.environ["FLUX_SCHNELL"] = str(model_cache / "snapshots" / "main" / "flux1-schnell.safetensors")
-        elif model_name == "flux-dev":
-            os.environ["FLUX_DEV"] = str(model_cache / "snapshots" / "main" / "flux1-dev.safetensors")
-        
-        # Set autoencoder path
-        os.environ["AE"] = str(model_cache / "snapshots" / "main" / "ae.safetensors")
-        
-        print(f"✅ Successfully downloaded and configured {model_name}")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error downloading {model_name}: {str(e)}")
-        raise
-
 def check_port_available(host: str, port: int) -> bool:
     """Check if a port is available on the given host"""
     import socket
@@ -350,38 +263,10 @@ def create_ui():
         .prompt-box { min-height: 100px; }
         .status-box { margin-top: 10px; }
         .generate-btn { min-height: 60px; }
-        .model-status { margin: 10px 0; padding: 10px; border-radius: 5px; background: #f5f5f5; }
     """
     
     blocks = gr.Blocks(theme=gr.themes.Soft(), css=css)
     with blocks:
-        # Model Management in Sidebar
-        with gr.Sidebar():
-            gr.Markdown("### 📦 Model Management")
-            
-            # Flux Schnell Model
-            with gr.Group(elem_classes="model-status"):
-                gr.Markdown("#### Flux Schnell")
-                schnell_status = gr.Markdown(value=check_model_status("flux-schnell"))
-                with gr.Row():
-                    schnell_download = gr.Button("📥 Download Model")
-                    schnell_force = gr.Checkbox(label="Force Download", value=False)
-            
-            # Flux Dev Model
-            with gr.Group(elem_classes="model-status"):
-                gr.Markdown("#### Flux Dev")
-                dev_status = gr.Markdown(value=check_model_status("flux-dev"))
-                with gr.Row():
-                    dev_download = gr.Button("📥 Download Model")
-                    dev_force = gr.Checkbox(label="Force Download", value=False)
-            
-            download_status = gr.Textbox(
-                label="Download Status",
-                value="",
-                lines=2,
-                interactive=False
-            )
-        
         # Main Content
         with gr.Column(elem_classes="container"):
             gr.Markdown(
@@ -618,21 +503,6 @@ def create_ui():
                 finally:
                     print("=== Generation Request Ended ===\n")
             
-            def on_model_download(model_name: str, force: bool = False) -> Tuple[str, str]:
-                """Handle model download and update status"""
-                try:
-                    check_and_download_models(model_name, force)
-                    status = check_model_status(model_name)
-                    return [
-                        status,
-                        f"✅ Successfully downloaded {model_name} model"
-                    ]
-                except Exception as e:
-                    return [
-                        check_model_status(model_name),
-                        f"❌ Error downloading {model_name} model: {str(e)}"
-                    ]
-            
             # Connect event handlers
             generate_btn.click(
                 fn=on_generate,
@@ -659,19 +529,6 @@ def create_ui():
                     total_time
                 ]
             )
-            
-            # Model download handlers
-            schnell_download.click(
-                fn=lambda force: on_model_download("flux-schnell", force),
-                inputs=[schnell_force],
-                outputs=[schnell_status, download_status]
-            )
-            
-            dev_download.click(
-                fn=lambda force: on_model_download("flux-dev", force),
-                inputs=[dev_force],
-                outputs=[dev_status, download_status]
-            )
     
     return blocks
 
@@ -682,35 +539,19 @@ def main():
         
         # Parse command line arguments
         parser = argparse.ArgumentParser(description="FLUX Image Generator")
-        parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to run the server on")
         parser.add_argument("--port", type=int, default=7860, help="Port to run the server on")
         
         # Add mutually exclusive group for listening options
         listen_group = parser.add_mutually_exclusive_group()
         listen_group.add_argument("--listen-all", action="store_true", help="Listen on all network interfaces (0.0.0.0)")
-        listen_group.add_argument("--listen-local", action="store_true", help="Listen on local network (192.168.0.0/16, 10.0.0.0/8)")
-        
-        # Add model download options
-        parser.add_argument("--download-models", action="store_true", help="Download models if not present")
-        parser.add_argument("--force-download", action="store_true", help="Force re-download of models even if present")
-        
+
         args = parser.parse_args()
-        
-        # Check and download models if requested
-        if args.download_models or args.force_download:
-            print("\nChecking model files...")
-            for model in ["flux-schnell", "flux-dev"]:
-                check_and_download_models(model, args.force_download)
         
         # Determine host based on listening flags
         if args.listen_all:
             host = "0.0.0.0"
             print("\nWarning: Server is listening on all network interfaces (0.0.0.0)")
             print("This mode is less secure and should only be used in trusted networks")
-        elif args.listen_local:
-            host = "192.168.1.1"  # This will allow local network access
-            print("\nWarning: Server is listening on local network")
-            print("This mode allows access from devices on your local network")
         else:
             host = "127.0.0.1"  # localhost only
             print("\nServer is listening on localhost only (most secure)")
@@ -728,8 +569,7 @@ def main():
         print(f"\nStarting Flux server on {host}:{port}")
         print("\nAccess modes:")
         print("1. Local only:     default                  (most secure, localhost only)")
-        print("2. Local network:  --listen-local          (allows LAN access)")
-        print("3. All networks:   --listen-all            (allows all connections)")
+        print("2. All networks:   --listen-all            (allows all connections)")
         
         if host != "127.0.0.1":
             print("\nTo use with Open WebUI in Docker:")

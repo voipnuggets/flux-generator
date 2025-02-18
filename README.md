@@ -1,7 +1,19 @@
-# FLUX Image Generator
-
-A Python application for generating images using the FLUX model on Apple Silicon Macs. This repository is based on the Flux example from this repository.
+# Flux Generator: macOS MLX-Powered Image Generation with Open WebUI compatable API
+This repository is based on the Flux example from this repository.
 https://github.com/ml-explore/mlx-examples/tree/main/flux
+
+## Features
+
+- Text-to-image generation
+- Multiple model options (schnell/dev)
+- Customizable image size and generation parameters
+- Memory usage reporting
+- API compatibility for third-party UIs like Open WebUI
+- Unified server for both UI and API
+- Configurable network access modes
+
+## Screenshots:
+![Flux App UI](flux_app_ui.jpg)
 
 ## Example Generation
 
@@ -48,13 +60,9 @@ python3.11 flux_app.py --listen-all
 python3.11 flux_app.py [OPTIONS]
 
 Options:
-  --host TEXT          Host to run the server on (default: 127.0.0.1)
   --port INTEGER       Port to run the server on (default: 7860)
   --listen-all         Listen on all network interfaces (0.0.0.0)
-  --listen-local       Listen on local network (192.168.0.0/16, 10.0.0.0/8)
-  --download-models    Download models if not present
-  --force-download     Force re-download of models even if present
-  --help              Show this message and exit
+  --help               Show this message and exit
 ```
 
 ### Command Line Interface
@@ -67,16 +75,6 @@ python3.11 txt2image.py --model schnell \
 --verbose \
 'A photo of an astronaut riding a horse on a beach.'
 ```
-
-## Features
-
-- Text-to-image generation
-- Multiple model options (schnell/dev)
-- Customizable image size and generation parameters
-- Memory usage reporting
-- API compatibility for third-party UIs like Open WebUI
-- Unified server for both UI and API
-- Configurable network access modes
 
 ## API Integration
 
@@ -211,19 +209,19 @@ if result["images"]:
 
 ## Model Management
 
-The Flux server requires model files to be downloaded before use. You can download the models in two ways:
+The Flux server requires model files to be downloaded before use. You can download the models in several ways:
 
 1. Automatic download on first use:
    - Models will be downloaded automatically when you first try to generate an image
+   - The download progress will be visible in the CLI/terminal
    - This may cause a delay on your first generation
 
-2. Manual download with flags:
+2. Using the command-line interface:
    ```bash
-   # Download models if not present
-   python3.11 flux_app.py --download-models
-   
-   # Force re-download models (overwrites existing files)
-   python3.11 flux_app.py --force-download
+   # This will download the model if not present locally
+   python3.11 txt2image.py --model schnell --steps 1 --verbose "A photo of an astronaut riding a horse on Mars."
    ```
+   - The download progress will be shown in the terminal
+   - After download completes, it will generate the image
 
 Model files are stored in the HuggingFace cache directory (`~/.cache/huggingface/hub/`).
