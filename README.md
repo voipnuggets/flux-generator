@@ -47,9 +47,6 @@ Run the unified server with both UI and API:
 # For local use only (most secure):
 python3.11 flux_app.py
 
-# For local network access (LAN only):
-python3.11 flux_app.py --listen-local
-
 # For all network access (including Docker):
 python3.11 flux_app.py --listen-all
 ```
@@ -61,8 +58,8 @@ python3.11 flux_app.py [OPTIONS]
 
 Options:
   --port INTEGER       Port to run the server on (default: 7860)
-  --listen-all         Listen on all network interfaces (0.0.0.0)
-  --help               Show this message and exit
+  --listen-all        Listen on all network interfaces (0.0.0.0)
+  --help              Show this message and exit
 ```
 
 ### Command Line Interface
@@ -82,7 +79,7 @@ The application provides an API that can be used with third-party UIs like Open 
 
 ### Starting the Server
 
-The server supports three access modes with different security levels:
+The server supports two access modes with different security levels:
 
 1. Local Only (Most Secure):
    ```bash
@@ -92,15 +89,7 @@ The server supports three access modes with different security levels:
    - Best for local development and testing
    - Not accessible from Docker or other machines
 
-2. Local Network:
-   ```bash
-   python3.11 flux_app.py --listen-local
-   ```
-   - Allows connections from your local network (LAN)
-   - Good for accessing from other devices on your network
-   - More secure than listening on all interfaces
-
-3. All Networks:
+2. All Networks:
    ```bash
    python3.11 flux_app.py --listen-all
    ```

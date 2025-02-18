@@ -1,8 +1,8 @@
 import unittest
-from pathlib import Path
 import sys
-import argparse
+from pathlib import Path
 from unittest.mock import patch, MagicMock
+import argparse
 
 # Add parent directory to path to import flux_app
 sys.path.append(str(Path(__file__).parent.parent))
@@ -35,68 +35,72 @@ class TestCLI(unittest.TestCase):
     def test_cli_arguments(self):
         """Test command line argument parsing"""
         test_args = [
-            "--enable-api",
-            "--api-port", "8000",
-            "--listen-all",
-            "--download-models",
-            "--force-download"
+            "--port", "8000",
+            "--listen-all"
         ]
         
         with patch("sys.argv", ["flux_app.py"] + test_args):
             parser = argparse.ArgumentParser()
-            parser.add_argument("--enable-api", action="store_true")
-            parser.add_argument("--api-port", type=int, default=7860)
+            parser.add_argument("--port", type=int, default=7860)
             parser.add_argument("--listen-all", action="store_true")
-            parser.add_argument("--download-models", action="store_true")
-            parser.add_argument("--force-download", action="store_true")
             
             args = parser.parse_args()
             
-            self.assertTrue(args.enable_api)
-            self.assertEqual(args.api_port, 8000)
+            self.assertEqual(args.port, 8000)
             self.assertTrue(args.listen_all)
-            self.assertTrue(args.download_models)
-            self.assertTrue(args.force_download)
     
-    @patch("uvicorn.run")
-    @patch("flux_app.check_system_compatibility")
-    @patch("flux_app.check_and_download_models")
-    def test_main_api_mode(self, mock_download, mock_check, mock_uvicorn):
-        """Test main function in API mode"""
-        test_args = ["flux_app.py", "--enable-api", "--listen-all"]
-        
-        with patch("sys.argv", test_args):
-            main()
+    def test_default_options(self):
+        """Test default command line options"""
+        with patch("sys.argv", ["flux_app.py"]):
+            parser = argparse.ArgumentParser()
+            parser.add_argument("--port", type=int, default=7860)
+            parser.add_argument("--listen-all", action="store_true")
             
-            mock_check.assert_called_once()
-            mock_uvicorn.assert_called_once()
-            self.assertEqual(mock_uvicorn.call_args[1]["host"], "0.0.0.0")
-            self.assertEqual(mock_uvicorn.call_args[1]["port"], 7860)
+            args = parser.parse_args()
+            
+            self.assertEqual(args.port, 7860)
+            self.assertFalse(args.listen_all)
     
-    @patch("gradio.Blocks.launch")
-    @patch("flux_app.check_system_compatibility")
-    @patch("flux_app.check_and_download_models")
-    @patch("flux_app.create_ui")
-    def test_main_ui_mode(self, mock_create_ui, mock_download, mock_check, mock_launch):
-        """Test main function in UI mode"""
-        test_args = ["flux_app.py"]
-        
-        # Mock create_ui to return a MagicMock
-        mock_demo = MagicMock()
-        mock_create_ui.return_value = mock_demo
-        
-        with patch("sys.argv", test_args):
-            main()
+    def test_invalid_port(self):
+        """Test invalid port number"""
+        with patch("sys.argv", ["flux_app.py", "--port", "invalid"]), \
+             patch("sys.stderr", new=MagicMock()):  # Suppress error output
+            parser = argparse.ArgumentParser()
+            parser.add_argument("--port", type=int)
             
-            mock_check.assert_called_once()
-            mock_create_ui.assert_called_once_with(enable_api=False, api_port=7860)
-            mock_demo.launch.assert_called_once_with(
-                server_name="127.0.0.1",
-                server_port=7860,
-                share=False,
-                show_error=True,
-                inbrowser=True
-            )
+            with self.assertRaises(SystemExit):
+                parser.parse_args()
+    
+    @patch("uvicorn.Server")
+    @patch("fastapi.FastAPI")
+    def test_server_startup(self, mock_fastapi, mock_server):
+        """Test server startup with different options"""
+        test_cases = [
+            {
+                "args": ["flux_app.py"],
+                "expected_host": "127.0.0.1",
+                "expected_port": 7860
+            },
+            {
+                "args": ["flux_app.py", "--listen-all"],
+                "expected_host": "0.0.0.0",
+                "expected_port": 7860
+            },
+            {
+                "args": ["flux_app.py", "--port", "8080"],
+                "expected_host": "127.0.0.1",
+                "expected_port": 8080
+            }
+        ]
+        
+        for case in test_cases:
+            sys.argv = case["args"]
+            with self.subTest(args=case["args"]):
+                main()
+                mock_server.assert_called()
+                config = mock_server.call_args[0][0]
+                self.assertEqual(config.host, case["expected_host"])
+                self.assertEqual(config.port, case["expected_port"])
 
 if __name__ == "__main__":
     unittest.main(verbosity=2) 

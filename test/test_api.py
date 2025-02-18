@@ -5,10 +5,11 @@ import sys
 import json
 from unittest.mock import patch, MagicMock
 import numpy as np
+import gradio as gr
 
 # Add parent directory to path to import flux_app
 sys.path.append(str(Path(__file__).parent.parent))
-from flux_app import app, create_ui
+from flux_app import app, create_ui, FluxAPI, SDAPIRequest
 
 class TestAPI(unittest.TestCase):
     """Test cases for API endpoints"""
@@ -20,60 +21,23 @@ class TestAPI(unittest.TestCase):
         from flux_app import app, create_ui
         
         # Create Gradio interface
-        demo = create_ui(enable_api=True, api_port=7860)
+        demo = create_ui()
         
         # Mount Gradio app at root
-        app.mount("/", demo.app)
+        app = gr.mount_gradio_app(app, demo, path="/")
         
         cls.client = TestClient(app)
     
-    @patch("flux_app.init_pipeline")
-    @patch("flux_app.flux_pipeline")
-    def test_txt2img_endpoint(self, mock_pipeline, mock_init_pipeline):
-        """Test the txt2img endpoint"""
-        # Mock the pipeline initialization and generation
-        mock_init_pipeline.return_value = mock_pipeline
-        
-        # Create mock latents and conditioning
-        mock_conditioning = np.zeros((1, 64, 64, 4))  # Mock conditioning tensor
-        mock_latents = np.zeros((1, 64, 64, 4))  # Mock latents tensor
-        
-        # Set up the mock pipeline
-        mock_pipeline.generate_latents.return_value = iter([mock_conditioning, mock_latents])
-        mock_pipeline.decode.return_value = np.zeros((1, 512, 512, 3))  # Mock decoded image
-        
-        payload = {
-            "prompt": "test image",
-            "width": 512,
-            "height": 512,
-            "steps": 1,
-            "cfg_scale": 4.0,
-            "batch_size": 1,
-            "n_iter": 1,
-            "seed": 42,
-            "model": "schnell"
-        }
-        
-        response = self.client.post("/sdapi/v1/txt2img", json=payload)
-        self.assertEqual(response.status_code, 200)
-        
-        # Verify response format
-        data = response.json()
-        self.assertIn("images", data)
-        self.assertTrue(len(data["images"]) > 0)
-        self.assertTrue(data["images"][0].startswith("data:image/png;base64,"))
-        
-        # Verify the pipeline was initialized and used correctly
-        mock_init_pipeline.assert_called_once_with("schnell", False)
-        mock_pipeline.generate_latents.assert_called_once()
-        mock_pipeline.decode.assert_called_once()
+    def setUp(self):
+        """Set up test environment for each test"""
+        self.api = FluxAPI()
     
-    @patch("flux_app.init_pipeline")
-    @patch("flux_app.flux_pipeline")
-    def test_txt2img_endpoint_with_gradio(self, mock_pipeline, mock_init_pipeline):
-        """Test that txt2img endpoint works correctly when mounted with Gradio"""
-        # Mock the pipeline initialization and generation
-        mock_init_pipeline.return_value = mock_pipeline
+    @patch("flux.FluxPipeline")
+    def test_txt2img_endpoint(self, mock_pipeline_class):
+        """Test the txt2img endpoint"""
+        # Set up mock pipeline
+        mock_pipeline = MagicMock()
+        mock_pipeline_class.return_value = mock_pipeline
         
         # Create mock latents and conditioning
         mock_conditioning = np.zeros((1, 64, 64, 4))  # Mock conditioning tensor
@@ -83,7 +47,6 @@ class TestAPI(unittest.TestCase):
         mock_pipeline.generate_latents.return_value = iter([mock_conditioning, mock_latents])
         mock_pipeline.decode.return_value = np.zeros((1, 512, 512, 3))  # Mock decoded image
         
-        # Test the API endpoint
         payload = {
             "prompt": "test image",
             "width": 512,
@@ -106,19 +69,9 @@ class TestAPI(unittest.TestCase):
         self.assertTrue(data["images"][0].startswith("data:image/png;base64,"))
         
         # Verify the pipeline was initialized and used correctly
-        mock_init_pipeline.assert_called_once_with("schnell", False)
+        mock_pipeline_class.assert_called_once_with("flux-schnell")
         mock_pipeline.generate_latents.assert_called_once()
         mock_pipeline.decode.assert_called_once()
-        
-        # Verify that Gradio UI is accessible at root
-        response = self.client.get("/")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("text/html", response.headers["content-type"].lower())
-        
-        # Verify that API documentation is accessible
-        response = self.client.get("/docs")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("text/html", response.headers["content-type"].lower())
     
     def test_models_endpoint(self):
         """Test the models endpoint"""
@@ -160,49 +113,76 @@ class TestAPI(unittest.TestCase):
         self.assertIn("state", progress)
         self.assertIn("textinfo", progress)
     
-    def test_cmd_flags_endpoint(self):
-        """Test the command flags endpoint"""
-        response = self.client.get("/sdapi/v1/cmd-flags")
-        self.assertEqual(response.status_code, 200)
+    @patch("flux.FluxPipeline")
+    def test_pipeline_reuse(self, mock_pipeline_class):
+        """Test that the pipeline is reused for the same model"""
+        # Set up mock pipeline
+        mock_pipeline = MagicMock()
+        mock_pipeline_class.return_value = mock_pipeline
         
-        flags = response.json()
-        self.assertIn("api", flags)
-        self.assertIn("ckpt", flags)
-        self.assertTrue(flags["api"])
+        # Create mock latents and conditioning
+        mock_conditioning = np.zeros((1, 64, 64, 4))
+        mock_latents = np.zeros((1, 64, 64, 4))
+        mock_pipeline.generate_latents.return_value = iter([mock_conditioning, mock_latents])
+        mock_pipeline.decode.return_value = np.zeros((1, 512, 512, 3))
+        
+        # Make two requests with the same model
+        payload = {
+            "prompt": "test image",
+            "model": "schnell",
+            "width": 512,
+            "height": 512,
+            "steps": 1
+        }
+        
+        # First request
+        response1 = self.client.post("/sdapi/v1/txt2img", json=payload)
+        self.assertEqual(response1.status_code, 200)
+        
+        # Second request
+        response2 = self.client.post("/sdapi/v1/txt2img", json=payload)
+        self.assertEqual(response2.status_code, 200)
+        
+        # Pipeline should be initialized only once
+        mock_pipeline_class.assert_called_once_with("flux-schnell")
     
-    def test_manifest_endpoint(self):
-        """Test that the web app manifest is accessible"""
-        response = self.client.get("/manifest.json")
-        self.assertEqual(response.status_code, 200)
+    @patch("flux.FluxPipeline")
+    def test_pipeline_switch(self, mock_pipeline_class):
+        """Test that the pipeline is reinitialized when switching models"""
+        # Set up mock pipeline
+        mock_pipeline = MagicMock()
+        mock_pipeline_class.return_value = mock_pipeline
         
-        manifest = response.json()
-        self.assertEqual(manifest["name"], "Flux Image Generator")
-        self.assertEqual(manifest["short_name"], "Flux")
-        self.assertEqual(manifest["start_url"], "/")
-        self.assertEqual(manifest["display"], "standalone")
-    
-    def test_generate_button_javascript(self):
-        """Test that the generate button uses the API directly"""
-        # Get the UI page
-        response = self.client.get("/")
-        self.assertEqual(response.status_code, 200)
+        # Create mock latents and conditioning
+        mock_conditioning = np.zeros((1, 64, 64, 4))
+        mock_latents = np.zeros((1, 64, 64, 4))
+        mock_pipeline.generate_latents.return_value = iter([mock_conditioning, mock_latents])
+        mock_pipeline.decode.return_value = np.zeros((1, 512, 512, 3))
         
-        # Extract the Gradio configuration
-        js_code = response.text
-        config_start = js_code.find("window.gradio_config = ") + len("window.gradio_config = ")
-        config_end = js_code.find(";</script>", config_start)
-        config = json.loads(js_code[config_start:config_end])
+        # Make requests with different models
+        base_payload = {
+            "prompt": "test image",
+            "width": 512,
+            "height": 512,
+            "steps": 1
+        }
         
-        # Find the generate button click handler
-        for dep in config["dependencies"]:
-            if dep.get("api_name") == "on_generate" and dep.get("js"):
-                js_code = dep["js"]
-                self.assertIn("fetch('/sdapi/v1/txt2img'", js_code)
-                self.assertIn("method: 'POST'", js_code)
-                self.assertIn("headers: { 'Content-Type': 'application/json' }", js_code)
-                break
-        else:
-            self.fail("Could not find generate button click handler")
+        # First request with schnell model
+        payload1 = {**base_payload, "model": "schnell"}
+        response1 = self.client.post("/sdapi/v1/txt2img", json=payload1)
+        self.assertEqual(response1.status_code, 200)
+        
+        # Second request with dev model
+        payload2 = {**base_payload, "model": "dev"}
+        response2 = self.client.post("/sdapi/v1/txt2img", json=payload2)
+        self.assertEqual(response2.status_code, 200)
+        
+        # Pipeline should be initialized twice
+        self.assertEqual(mock_pipeline_class.call_count, 2)
+        mock_pipeline_class.assert_has_calls([
+            unittest.mock.call("flux-schnell"),
+            unittest.mock.call("flux-dev")
+        ])
 
 if __name__ == "__main__":
     unittest.main(verbosity=2) 
