@@ -74,7 +74,11 @@ python3.11 txt2image.py --model schnell \
 ```
 ## Generating image uising the flux generator UI
 
-The UI is accessable here http://127.0.0.1:7860 . Enter a prompt and click generate button. On the first use the model will get downloaded which is about 23 GB in size. The downloaded status is visible on the terminal. Once the model is downloaded the image generation will start.
+- The UI is accessable here http://127.0.0.1:7860
+- Enter a prompt and click generate buttons
+- On the first use the model will get downloaded which is about 23 GB in size
+- The downloaded status is visible on the terminal
+- Once the model is downloaded the image generation will start
 
 
 ## API Integration
