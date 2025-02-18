@@ -1,6 +1,7 @@
 # FLUX Image Generator
 
-A Python application for generating images using the FLUX model on Apple Silicon Macs.
+A Python application for generating images using the FLUX model on Apple Silicon Macs. This repository is based on the Flux example from this repository.
+https://github.com/ml-explore/mlx-examples/tree/main/flux
 
 ## Example Generation
 
