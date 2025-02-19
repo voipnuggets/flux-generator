@@ -86,6 +86,8 @@ python3.11 txt2image.py --model schnell \
 ## API Integration
 
 The application provides an API that can be used with third-party UIs like Open WebUI.
+Check this tutorial for Open WebUI integration instructions:
+https://voipnuggets.com/2025/02/18/flux-generator-local-image-generation-on-apple-silicon-with-open-webui-integration-using-flux-llm/
 
 ### Starting the Server
 
