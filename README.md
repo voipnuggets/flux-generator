@@ -213,7 +213,34 @@ The Flux server requires model files to be downloaded before use. You can downlo
    - The download progress will be visible in the CLI/terminal
    - This may cause a delay on your first generation
 
-2. Using the command-line interface:
+2. Using HuggingFace CLI (Recommended for faster downloads):
+
+   ```bash
+   # Install the HuggingFace CLI
+   pip install -U "huggingface_hub[cli]"
+
+   # Install hf_transfer for blazingly fast speeds
+   pip install hf_transfer
+
+   # Login to your HF account
+   huggingface-cli login
+   
+   # Enable fast downloads
+   export HF_HUB_ENABLE_HF_TRANSFER=1
+
+   # Download Schnell model
+   huggingface-cli download black-forest-labs/FLUX.1-schnell
+
+   # Download Dev model (optional)
+   huggingface-cli download black-forest-labs/FLUX.1-dev
+   ```
+
+   Note: Each model is approximately 24GB in size. The download includes:
+   - Model weights (flux1-{model}.safetensors)
+   - Autoencoder (ae.safetensors)
+   - Text encoders and tokenizers
+
+3. Using the command-line interface:
    ```bash
    # This will download the model if not present locally
    python3.11 txt2image.py --model schnell --steps 1 --verbose "A photo of an astronaut riding a horse on Mars."
