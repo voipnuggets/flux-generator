@@ -87,7 +87,8 @@ python3.11 txt2image.py --model schnell \
 
 The application provides an API that can be used with third-party UIs like Open WebUI.
 Check this tutorial for Open WebUI integration instructions:
-https://voipnuggets.com/2025/02/18/flux-generator-local-image-generation-on-apple-silicon-with-open-webui-integration-using-flux-llm/
+[Tutorial](https://voipnuggets.com/2025/02/18/flux-generator-local-image-generation-on-apple-silicon-with-open-webui-integration-using-flux-llm/
+)
 
 ### Starting the Server
 
@@ -254,7 +255,26 @@ The Flux server requires model files to be downloaded before use. You can downlo
 Model files are stored in the HuggingFace cache directory (`~/.cache/huggingface/hub/`).
 
 ## Buy Me a Coffee
-It took a lot of time and effort to create this application so please Star the repository if you find it useful.
+
+👋 Hi, I'm Akash Gupta! Here's what I work on:
+
+• 🚀 **Current Project**: Flux Generator - MLX-powered image generation for Apple Silicon
+  - Local image generation using Apple's MLX framework
+  - Beautiful Gradio UI with real-time stats
+  - API compatible with Open WebUI
+  - Memory-efficient design for M1/M2/M3 Macs
+
+• 💼 **Professional Background**:
+  - Sr. Voice Over IP Engineer
+  - Expert in Kamailio and open-source VoIP
+  - Cloud integration specialist
+
+• 🌐 **Community Contributions**:
+  - Blog: [voipnuggets.com](https://voipnuggets.com)
+  - Focus: VoIP technology & AI advancements
+  - Regular tutorials and technical guides
+
+If you find this project helpful, consider supporting my work:
 
 <img src="bmc_qr.png" alt="Buy Me A Coffee QR Code" width="200" height="200">
 
