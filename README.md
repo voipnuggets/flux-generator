@@ -2,7 +2,6 @@
 This repository is based on the Flux example from this repository.
 https://github.com/ml-explore/mlx-examples/tree/main/flux
 
-It took a lot of time and effort to create this application so please Star the repository if you find it useful.
 ## Features
 
 - Text-to-image generation
@@ -255,6 +254,8 @@ The Flux server requires model files to be downloaded before use. You can downlo
 Model files are stored in the HuggingFace cache directory (`~/.cache/huggingface/hub/`).
 
 ## Buy Me a Coffee
+It took a lot of time and effort to create this application so please Star the repository if you find it useful.
+
 <img src="bmc_qr.png" alt="Buy Me A Coffee QR Code" width="200" height="200">
 
 [☕ Buy Me a Coffee](https://buymeacoffee.com/akashg)
