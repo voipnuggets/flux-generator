@@ -255,5 +255,6 @@ The Flux server requires model files to be downloaded before use. You can downlo
 Model files are stored in the HuggingFace cache directory (`~/.cache/huggingface/hub/`).
 
 ## Buy Me a Coffee
-![Bye Me A Coffee](bmc_qr.png)
-buymeacoffee.com/akashg
+<img src="bmc_qr.png" alt="Buy Me A Coffee QR Code" width="200" height="200">
+
+[☕ Buy Me a Coffee](https://buymeacoffee.com/akashg)
