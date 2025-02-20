@@ -2,6 +2,7 @@
 This repository is based on the Flux example from this repository.
 https://github.com/ml-explore/mlx-examples/tree/main/flux
 
+It took a lot of time and effort to create this application so please Star the repository if you find it useful.
 ## Features
 
 - Text-to-image generation
@@ -49,7 +50,7 @@ Run the unified server with both UI and API:
 # For local use only (most secure):
 python3.11 flux_app.py
 
-# For all network access (including Docker):
+# For all network access (listens on 0.0.0.0):
 python3.11 flux_app.py --listen-all
 ```
 
@@ -99,14 +100,12 @@ The server supports two access modes with different security levels:
    ```
    - Only allows connections from localhost (127.0.0.1)
    - Best for local development and testing
-   - Not accessible from Docker or other machines
 
 2. All Networks:
    ```bash
    python3.11 flux_app.py --listen-all
    ```
    - Allows connections from any network interface
-   - Required for Docker integration
    - Less secure, use only in trusted networks
 
 The server will start on port 7860 (configurable with `--port`).
@@ -115,9 +114,12 @@ The server will start on port 7860 (configurable with `--port`).
 
 1. Start the Flux server on your host machine:
    ```bash
-   python3.11 flux_app.py --listen-all
+   python3.11 flux_app.py
    ```
-   Note: Docker integration requires `--listen-all` to allow container access.
+   if the Open WebUI is running on a different machine then use the following command
+   ```bash
+   python3.11 flux_app.py  --listen-all
+   ```
 
 2. Run Open WebUI in Docker:
    ```bash
@@ -182,8 +184,6 @@ import base64
 
 # Use appropriate URL based on your setup:
 # Local only:      "http://127.0.0.1:7860"
-# Local network:   "http://192.168.1.1:7860"
-# Docker:          "http://host.docker.internal:7860"
 url = "http://127.0.0.1:7860/sdapi/v1/txt2img"
 
 payload = {
@@ -253,3 +253,7 @@ The Flux server requires model files to be downloaded before use. You can downlo
    - After download completes, it will generate the image
 
 Model files are stored in the HuggingFace cache directory (`~/.cache/huggingface/hub/`).
+
+## Buy Me a Coffee
+![Bye Me A Coffee](bmc_qr.png)
+buymeacoffee.com/akashg
