@@ -34,24 +34,55 @@ Parameters:
 - Python 3.10+ (tested with python3.11)
 - MLX framework
 
-## Installation
+## Installation & Usage
+
+### Quick Start (Recommended)
+
+The easiest way to run Flux Generator is using the provided script:
 
 ```bash
-python3.11 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# Make the script executable
+chmod +x run_flux.sh
+
+# Run the application
+./run_flux.sh
 ```
 
-## Usage
+The script will:
+- Check if you're running on Apple Silicon Mac
+- Create and set up a Python virtual environment
+- Install all required dependencies
+- Check for existing model files
+- Start the server with network access enabled
 
-Run the unified server with both UI and API:
-```bash
-# For local use only (most secure):
-python3.11 flux_app.py
+### Manual Installation
 
-# For all network access (listens on 0.0.0.0):
-python3.11 flux_app.py --listen-all
-```
+If you prefer to set things up manually:
+
+1. **Create a virtual environment:**
+   ```bash
+   python3.11 -m venv venv
+   
+   # For bash/zsh:
+   source venv/bin/activate
+   
+   # For fish:
+   source venv/bin/activate.fish
+   ```
+
+2. **Install requirements:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Run the server:**
+   ```bash
+   # For local use only (most secure):
+   python3.11 flux_app.py
+
+   # For all network access (listens on 0.0.0.0):
+   python3.11 flux_app.py --listen-all
+   ```
 
 ### Command Line Options
 
@@ -74,6 +105,17 @@ python3.11 txt2image.py --model schnell \
 --verbose \
 'A photo of an astronaut riding a horse on a beach.'
 ```
+
+## Using the Web Interface
+
+Once the server is running (either via `run_flux.sh` or manually):
+
+1. Open your browser and navigate to http://127.0.0.1:7860
+2. Enter a prompt and click the generate button
+3. On first use, the model will be downloaded (approximately 23 GB)
+4. Download progress will be visible in the terminal
+5. Once downloaded, image generation will begin
+
 ## Generating image uising the flux generator UI
 
 - The UI is accessable here http://127.0.0.1:7860
@@ -110,20 +152,20 @@ The server supports two access modes with different security levels:
 
 The server will start on port 7860 (configurable with `--port`).
 
-### Docker Integration with Open WebUI
+### Integration with Open WebUI
 
-1. Start the Flux server on your host machine:
+Since Flux Generator requires direct access to Apple Silicon hardware, it runs natively on your Mac while Open WebUI can run in Docker:
+
+1. Start Flux Generator using the provided script:
    ```bash
-   python3.11 flux_app.py
+   ./run_flux.sh
    ```
-   if the Open WebUI is running on a different machine then use the following command
-   ```bash
-   python3.11 flux_app.py  --listen-all
-   ```
+   This will start the server and listen on all interfaces (required for Docker integration).
 
 2. Run Open WebUI in Docker:
    ```bash
-   docker run -d -p 3000:8080 \
+   docker run -d \
+     -p 3000:8080 \
      --add-host=host.docker.internal:host-gateway \
      -e AUTOMATIC1111_BASE_URL=http://host.docker.internal:7860/ \
      -e ENABLE_IMAGE_GENERATION=True \
@@ -137,10 +179,13 @@ The server will start on port 7860 (configurable with `--port`).
 
 The connection flow works like this:
 ```
-Open WebUI (Docker Container) -> host.docker.internal:7860 -> Flux API (Host Machine)
+Open WebUI (Docker Container) -> host.docker.internal:7860 -> Flux Generator (Native on Mac)
 ```
 
-This setup runs the resource-intensive model natively on your Mac while the UI runs in Docker.
+This setup ensures:
+- Flux Generator has direct access to Apple Silicon for optimal performance
+- Open WebUI runs in an isolated container
+- Both services communicate seamlessly through Docker's networking
 
 ### Available Endpoints
 
