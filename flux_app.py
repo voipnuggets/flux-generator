@@ -18,6 +18,18 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import json
 
+# Create FastAPI app
+app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Global pipeline instances
 flux_pipeline = None
 
@@ -532,6 +544,34 @@ def create_ui():
     
     return blocks
 
+# Export the generate_images function at module level
+def generate_images(
+    prompt: str,
+    model: str = "schnell",
+    width: int = 512,
+    height: int = 512,
+    steps: Optional[int] = None,
+    guidance: float = 4.0,
+    seed: Optional[int] = None,
+    batch_size: int = 1,
+    n_iter: int = 1,
+    return_pil: bool = False
+) -> List[Union[str, Image.Image]]:
+    """Generate images with the given parameters"""
+    api = FluxAPI()
+    return api.generate_images(
+        prompt=prompt,
+        model=model,
+        width=width,
+        height=height,
+        steps=steps,
+        guidance=guidance,
+        seed=seed,
+        batch_size=batch_size,
+        n_iter=n_iter,
+        return_pil=return_pil
+    )
+
 def main():
     """Main entry point"""
     try:
@@ -609,6 +649,31 @@ def main():
     except Exception as e:
         print(f"Unexpected error: {e}")
         sys.exit(1)
+
+def get_app():
+    """Create and configure FastAPI app for testing"""
+    # Create FastAPI app
+    app = FastAPI()
+    
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    # Create Gradio interface
+    demo = create_ui()
+    
+    # Create and mount API endpoints
+    create_api(app)
+    
+    # Mount Gradio app to FastAPI
+    app = gr.mount_gradio_app(app, demo, path="/")
+    
+    return app
 
 if __name__ == "__main__":
     main() 

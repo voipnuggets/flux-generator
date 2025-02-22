@@ -44,8 +44,11 @@ The easiest way to run Flux Generator is using the provided script:
 # Make the script executable
 chmod +x run_flux.sh
 
-# Run the application
+# Run in local-only mode (most secure)
 ./run_flux.sh
+
+# Or run with network access (for remote access)
+./run_flux.sh --network
 ```
 
 The script will:
@@ -53,7 +56,43 @@ The script will:
 - Create and set up a Python virtual environment
 - Install all required dependencies
 - Check for existing model files
-- Start the server with network access enabled
+- Start the server based on the selected mode
+
+### Script Options
+
+```bash
+Usage: ./run_flux.sh [OPTIONS]
+
+Options:
+  -h, --help         Show this help message
+  -n, --network      Enable network access (less secure)
+
+Examples:
+  ./run_flux.sh                 # Run in local-only mode (most secure)
+  ./run_flux.sh --network       # Run with network access (for remote access)
+```
+
+### Access Modes
+
+1. **Local Only (Default, Most Secure)**
+   ```bash
+   ./run_flux.sh
+   ```
+   - Only allows connections from localhost (127.0.0.1)
+   - Best for local development and testing
+   - Access via: http://127.0.0.1:7860
+
+2. **Network Access**
+   ```bash
+   ./run_flux.sh --network
+   ```
+   - Allows connections from any network interface
+   - Required for Docker integration
+   - Less secure, use only in trusted networks
+   - Access via:
+     - Local: http://127.0.0.1:7860
+     - Network: http://0.0.0.0:7860
+     - Docker: http://host.docker.internal:7860
 
 ### Manual Installation
 
@@ -80,7 +119,7 @@ If you prefer to set things up manually:
    # For local use only (most secure):
    python3.11 flux_app.py
 
-   # For all network access (listens on 0.0.0.0):
+   # For network access (remote):
    python3.11 flux_app.py --listen-all
    ```
 
@@ -156,9 +195,9 @@ The server will start on port 7860 (configurable with `--port`).
 
 Since Flux Generator requires direct access to Apple Silicon hardware, it runs natively on your Mac while Open WebUI can run in Docker:
 
-1. Start Flux Generator using the provided script:
+1. Start Flux Generator with network access:
    ```bash
-   ./run_flux.sh
+   ./run_flux.sh --network
    ```
    This will start the server and listen on all interfaces (required for Docker integration).
 
@@ -324,3 +363,68 @@ If you find this project helpful, consider supporting my work:
 <img src="bmc_qr.png" alt="Buy Me A Coffee QR Code" width="200" height="200">
 
 [☕ Buy Me a Coffee](https://buymeacoffee.com/akashg)
+
+## Testing
+
+The project includes several test suites to ensure everything works correctly:
+
+### Shell Script Tests
+
+To test the `run_flux.sh` script:
+```bash
+# Make the test script executable
+chmod +x test/test_run_script.sh
+
+# Run the tests
+./test/test_run_script.sh
+```
+
+These tests verify:
+- Command-line argument handling
+- System requirement checks
+- Virtual environment management
+- Memory reporting
+- Model file checking
+- Network access modes
+
+### Python Tests
+
+To run the Python tests:
+```bash
+# Install test requirements
+pip install -r test/requirements-test.txt
+
+# Run all tests with coverage report
+python3.11 test/run_tests.py
+```
+
+The Python tests cover:
+- API endpoints and functionality
+- UI components and handlers
+- Model generation
+- Docker integration
+- Network connectivity
+
+### Integration Tests
+
+For testing Docker integration:
+```bash
+# Test connectivity between Flux and Open WebUI
+python3.11 test/test_connectivity.py
+```
+
+This verifies:
+- API accessibility
+- Docker network configuration
+- Model availability
+- Generation capabilities
+
+### Test Coverage
+
+The test suite provides coverage reports for:
+- Python code (via pytest-cov)
+- API endpoints
+- UI components
+- Shell scripts
+
+Coverage reports are generated in the `coverage_report` directory.

@@ -12,7 +12,7 @@ import numpy as np
 
 # Add parent directory to path to import flux_app
 sys.path.append(str(Path(__file__).parent.parent))
-from flux_app import generate_images, GenerationRequest, to_latent_size, configs
+from flux_app import generate_images, SDAPIRequest, to_latent_size, FluxAPI
 
 url = "http://127.0.0.1:7860/sdapi/v1/txt2img"
 payload = {
@@ -75,33 +75,36 @@ class TestImageGeneration(unittest.TestCase):
     def test_generation_request_validation(self):
         """Test that generation request validation works"""
         # Test valid request
-        request = GenerationRequest(
+        request = SDAPIRequest(
             prompt="test image",
             model="schnell",
-            n_images=1,
-            image_size="512x512",
+            width=512,
+            height=512,
             steps=1,
-            guidance=4.0,
-            seed=42
+            cfg_scale=4.0,
+            seed=42,
+            batch_size=1,
+            n_iter=1
         )
         self.assertEqual(request.model, "schnell")
-        self.assertEqual(request.n_images, 1)
+        self.assertEqual(request.width, 512)
+        self.assertEqual(request.height, 512)
         
         # Test default values
-        request = GenerationRequest(prompt="test")
+        request = SDAPIRequest(prompt="test")
         self.assertEqual(request.model, "schnell")
-        self.assertEqual(request.n_images, 1)
-        self.assertEqual(request.image_size, "512x512")
-        self.assertEqual(request.guidance, 4.0)
+        self.assertEqual(request.width, 512)
+        self.assertEqual(request.height, 512)
+        self.assertEqual(request.cfg_scale, 4.0)
         self.assertIsNone(request.steps)
-        self.assertIsNone(request.seed)
+        self.assertEqual(request.seed, -1)
     
-    @patch("flux_app.init_pipeline")
-    @patch("flux_app.flux_pipeline")
-    def test_generate_images(self, mock_pipeline, mock_init_pipeline):
+    @patch("flux.FluxPipeline")
+    def test_generate_images(self, mock_pipeline_class):
         """Test that images can be generated"""
-        # Mock the pipeline initialization and generation
-        mock_init_pipeline.return_value = mock_pipeline
+        # Set up mock pipeline
+        mock_pipeline = MagicMock()
+        mock_pipeline_class.return_value = mock_pipeline
         
         # Create mock latents and conditioning
         mock_conditioning = np.zeros((1, 64, 64, 4))  # Mock conditioning tensor
@@ -111,20 +114,24 @@ class TestImageGeneration(unittest.TestCase):
         mock_pipeline.generate_latents.return_value = iter([mock_conditioning, mock_latents])
         mock_pipeline.decode.return_value = np.zeros((1, 512, 512, 3))  # Mock decoded image
         
-        request = GenerationRequest(
+        # Create API instance
+        api = FluxAPI()
+        
+        # Generate images
+        images = api.generate_images(
             prompt="test image",
             model="schnell",
-            n_images=1,
-            image_size="512x512",
+            width=512,
+            height=512,
             steps=1,
             guidance=4.0,
-            seed=42
+            seed=42,
+            batch_size=1,
+            n_iter=1
         )
         
-        images = generate_images(request)
-        
         # Verify the pipeline was initialized and used correctly
-        mock_init_pipeline.assert_called_once_with("schnell", False)
+        mock_pipeline_class.assert_called_once_with("flux-schnell")
         mock_pipeline.generate_latents.assert_called_once()
         mock_pipeline.decode.assert_called_once()
         
