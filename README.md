@@ -36,10 +36,62 @@ Parameters:
 
 ## Installation
 
+### Method 1: Traditional Installation
+
 ```bash
 python3.11 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+```
+
+### Method 2: Docker Installation 🐳
+
+The easiest way to run Flux Generator is using Docker. Make sure you have Docker installed on your Mac.
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/yourusername/flux-generator.git
+   cd flux-generator
+   ```
+
+2. **Build and run using docker-compose:**
+   ```bash
+   docker compose up -d
+   ```
+   This will:
+   - Build the Docker image
+   - Start the container in the background
+   - Map port 8080 to your host
+   - Mount HuggingFace cache for model persistence
+   - Enable GPU access for Apple Silicon
+
+3. **Access the UI:**
+   - Open your browser and navigate to: `http://localhost:8080`
+   - The UI and API will be available at this address
+
+4. **View logs:**
+   ```bash
+   docker compose logs -f
+   ```
+
+5. **Stop the container:**
+   ```bash
+   docker compose down
+   ```
+
+### Docker Integration with Open WebUI
+
+When using Docker, update the port in your Open WebUI configuration:
+
+```bash
+docker run -d -p 3000:8080 \
+  --add-host=host.docker.internal:host-gateway \
+  -e AUTOMATIC1111_BASE_URL=http://host.docker.internal:8080/ \
+  -e ENABLE_IMAGE_GENERATION=True \
+  -v open-webui:/app/backend/data \
+  --name open-webui \
+  --restart always \
+  ghcr.io/open-webui/open-webui:main
 ```
 
 ## Usage
