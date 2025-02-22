@@ -46,7 +46,27 @@ pip install -r requirements.txt
 
 ### Method 2: Docker Installation 🐳
 
-The easiest way to run Flux Generator is using Docker. Make sure you have Docker installed on your Mac.
+You can run Flux Generator using Docker in two ways:
+
+#### Option A: Using Pre-built Image (Recommended)
+
+The easiest way to run Flux Generator is using our pre-built Docker image:
+
+```bash
+# Pull and run the container
+docker run -d \
+  -p 7860:7860 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+  --device /dev/apple_gpu_control \
+  --name flux-generator \
+  --restart always \
+  ghcr.io/yourusername/flux-generator:latest
+```
+
+#### Option B: Building Locally
+
+If you prefer to build the image locally:
 
 1. **Clone the repository:**
    ```bash
@@ -61,12 +81,12 @@ The easiest way to run Flux Generator is using Docker. Make sure you have Docker
    This will:
    - Build the Docker image
    - Start the container in the background
-   - Map port 8080 to your host
+   - Map port 7860 to your host
    - Mount HuggingFace cache for model persistence
    - Enable GPU access for Apple Silicon
 
 3. **Access the UI:**
-   - Open your browser and navigate to: `http://localhost:8080`
+   - Open your browser and navigate to: `http://localhost:7860`
    - The UI and API will be available at this address
 
 4. **View logs:**
@@ -81,18 +101,55 @@ The easiest way to run Flux Generator is using Docker. Make sure you have Docker
 
 ### Docker Integration with Open WebUI
 
-When using Docker, update the port in your Open WebUI configuration:
+Both Flux Generator and Open WebUI can be run using pre-built Docker images:
 
 ```bash
-docker run -d -p 3000:8080 \
+# 1. Start Flux Generator
+docker run -d \
+  -p 7860:7860 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+  --device /dev/apple_gpu_control \
+  --name flux-generator \
+  --restart always \
+  ghcr.io/yourusername/flux-generator:latest
+
+# 2. Run Open WebUI
+docker run -d \
+  -p 3000:8080 \
   --add-host=host.docker.internal:host-gateway \
-  -e AUTOMATIC1111_BASE_URL=http://host.docker.internal:8080/ \
+  -e AUTOMATIC1111_BASE_URL=http://host.docker.internal:7860/ \
   -e ENABLE_IMAGE_GENERATION=True \
   -v open-webui:/app/backend/data \
   --name open-webui \
   --restart always \
   ghcr.io/open-webui/open-webui:main
 ```
+
+The connection flow works like this:
+```
+Open WebUI Container (3000) -> Flux Generator Container (7860)
+```
+
+### Testing Docker Setup
+
+A test script is provided to verify the Docker installation:
+
+```bash
+# Make the script executable
+chmod +x test_docker.sh
+
+# Run the tests
+./test_docker.sh
+```
+
+The test script will:
+- Verify Docker installation
+- Check for existing model files
+- Test container setup
+- Test API endpoints
+- Generate a test image
+- Clean up after testing
 
 ## Usage
 

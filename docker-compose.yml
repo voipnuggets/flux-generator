@@ -4,7 +4,7 @@ services:
   flux-generator:
     build: .
     ports:
-      - "8080:8080"
+      - "7860:7860"
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
     environment:

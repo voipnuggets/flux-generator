@@ -16,11 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose the port
-EXPOSE 8080
+EXPOSE 7860
 
 # Set environment variables
-ENV PORT=8080
+ENV PORT=7860
 ENV HOST=0.0.0.0
 
 # Run the application
-CMD ["python3.11", "flux_app.py", "--listen-all", "--port", "8080"] 
+CMD ["python3.11", "flux_app.py", "--listen-all", "--port", "7860"]
