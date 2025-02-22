@@ -301,7 +301,7 @@ def create_ui():
                                 minimum=1,
                                 maximum=100,
                                 step=1,
-                                value=None,
+                                value=2,  # Default to 2 steps since Schnell is the default model
                                 label="Steps",
                                 info="Leave empty for default (2 for Schnell, 50 for Dev)"
                             )
