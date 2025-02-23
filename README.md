@@ -34,24 +34,94 @@ Parameters:
 - Python 3.10+ (tested with python3.11)
 - MLX framework
 
-## Installation
+## Installation & Usage
+
+### Quick Start (Recommended)
+
+The easiest way to run Flux Generator is using the provided script:
 
 ```bash
-python3.11 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# Make the script executable
+chmod +x run_flux.sh
+
+# Run in local-only mode (most secure)
+./run_flux.sh
+
+# Or run with network access (for remote access)
+./run_flux.sh --network
 ```
 
-## Usage
+The script will:
+- Check if you're running on Apple Silicon Mac
+- Create and set up a Python virtual environment
+- Install all required dependencies
+- Check for existing model files
+- Start the server based on the selected mode
 
-Run the unified server with both UI and API:
+### Script Options
+
 ```bash
-# For local use only (most secure):
-python3.11 flux_app.py
+Usage: ./run_flux.sh [OPTIONS]
 
-# For all network access (listens on 0.0.0.0):
-python3.11 flux_app.py --listen-all
+Options:
+  -h, --help         Show this help message
+  -n, --network      Enable network access (less secure)
+
+Examples:
+  ./run_flux.sh                 # Run in local-only mode (most secure)
+  ./run_flux.sh --network       # Run with network access (for remote access)
 ```
+
+### Access Modes
+
+1. **Local Only (Default, Most Secure)**
+   ```bash
+   ./run_flux.sh
+   ```
+   - Only allows connections from localhost (127.0.0.1)
+   - Best for local development and testing
+   - Access via: http://127.0.0.1:7860
+
+2. **Network Access**
+   ```bash
+   ./run_flux.sh --network
+   ```
+   - Allows connections from any network interface
+   - Required for Docker integration
+   - Less secure, use only in trusted networks
+   - Access via:
+     - Local: http://127.0.0.1:7860
+     - Network: http://0.0.0.0:7860
+     - Docker: http://host.docker.internal:7860
+
+### Manual Installation
+
+If you prefer to set things up manually:
+
+1. **Create a virtual environment:**
+   ```bash
+   python3.11 -m venv venv
+   
+   # For bash/zsh:
+   source venv/bin/activate
+   
+   # For fish:
+   source venv/bin/activate.fish
+   ```
+
+2. **Install requirements:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Run the server:**
+   ```bash
+   # For local use only (most secure):
+   python3.11 flux_app.py
+
+   # For network access (remote):
+   python3.11 flux_app.py --listen-all
+   ```
 
 ### Command Line Options
 
@@ -74,6 +144,17 @@ python3.11 txt2image.py --model schnell \
 --verbose \
 'A photo of an astronaut riding a horse on a beach.'
 ```
+
+## Using the Web Interface
+
+Once the server is running (either via `run_flux.sh` or manually):
+
+1. Open your browser and navigate to http://127.0.0.1:7860
+2. Enter a prompt and click the generate button
+3. On first use, the model will be downloaded (approximately 23 GB)
+4. Download progress will be visible in the terminal
+5. Once downloaded, image generation will begin
+
 ## Generating image uising the flux generator UI
 
 - The UI is accessable here http://127.0.0.1:7860
@@ -110,20 +191,20 @@ The server supports two access modes with different security levels:
 
 The server will start on port 7860 (configurable with `--port`).
 
-### Docker Integration with Open WebUI
+### Integration with Open WebUI
 
-1. Start the Flux server on your host machine:
+Since Flux Generator requires direct access to Apple Silicon hardware, it runs natively on your Mac while Open WebUI can run in Docker:
+
+1. Start Flux Generator with network access:
    ```bash
-   python3.11 flux_app.py
+   ./run_flux.sh --network
    ```
-   if the Open WebUI is running on a different machine then use the following command
-   ```bash
-   python3.11 flux_app.py  --listen-all
-   ```
+   This will start the server and listen on all interfaces (required for Docker integration).
 
 2. Run Open WebUI in Docker:
    ```bash
-   docker run -d -p 3000:8080 \
+   docker run -d \
+     -p 3000:8080 \
      --add-host=host.docker.internal:host-gateway \
      -e AUTOMATIC1111_BASE_URL=http://host.docker.internal:7860/ \
      -e ENABLE_IMAGE_GENERATION=True \
@@ -137,10 +218,13 @@ The server will start on port 7860 (configurable with `--port`).
 
 The connection flow works like this:
 ```
-Open WebUI (Docker Container) -> host.docker.internal:7860 -> Flux API (Host Machine)
+Open WebUI (Docker Container) -> host.docker.internal:7860 -> Flux Generator (Native on Mac)
 ```
 
-This setup runs the resource-intensive model natively on your Mac while the UI runs in Docker.
+This setup ensures:
+- Flux Generator has direct access to Apple Silicon for optimal performance
+- Open WebUI runs in an isolated container
+- Both services communicate seamlessly through Docker's networking
 
 ### Available Endpoints
 
@@ -279,3 +363,68 @@ If you find this project helpful, consider supporting my work:
 <img src="bmc_qr.png" alt="Buy Me A Coffee QR Code" width="200" height="200">
 
 [☕ Buy Me a Coffee](https://buymeacoffee.com/akashg)
+
+## Testing
+
+The project includes several test suites to ensure everything works correctly:
+
+### Shell Script Tests
+
+To test the `run_flux.sh` script:
+```bash
+# Make the test script executable
+chmod +x test/test_run_script.sh
+
+# Run the tests
+./test/test_run_script.sh
+```
+
+These tests verify:
+- Command-line argument handling
+- System requirement checks
+- Virtual environment management
+- Memory reporting
+- Model file checking
+- Network access modes
+
+### Python Tests
+
+To run the Python tests:
+```bash
+# Install test requirements
+pip install -r test/requirements-test.txt
+
+# Run all tests with coverage report
+python3.11 test/run_tests.py
+```
+
+The Python tests cover:
+- API endpoints and functionality
+- UI components and handlers
+- Model generation
+- Docker integration
+- Network connectivity
+
+### Integration Tests
+
+For testing Docker integration:
+```bash
+# Test connectivity between Flux and Open WebUI
+python3.11 test/test_connectivity.py
+```
+
+This verifies:
+- API accessibility
+- Docker network configuration
+- Model availability
+- Generation capabilities
+
+### Test Coverage
+
+The test suite provides coverage reports for:
+- Python code (via pytest-cov)
+- API endpoints
+- UI components
+- Shell scripts
+
+Coverage reports are generated in the `coverage_report` directory.

@@ -2,10 +2,15 @@ import pytest
 from fastapi.testclient import TestClient
 import sys
 from pathlib import Path
+from fastapi import FastAPI
 
 # Add parent directory to path to import flux_app
 sys.path.append(str(Path(__file__).parent.parent))
-from flux_app import app
+from flux_app import create_api
+
+# Create FastAPI app for testing
+app = FastAPI()
+api = create_api(app)
 
 @pytest.fixture
 def client():
