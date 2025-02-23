@@ -12,7 +12,7 @@ https://github.com/ml-explore/mlx-examples/tree/main/flux
 - Unified server for both UI and API
 - Configurable network access modes
 
-## Screenshots:
+## UI Screenshots:
 ![Flux App UI](flux_app_ui.jpg)
 
 ## Example Generation
