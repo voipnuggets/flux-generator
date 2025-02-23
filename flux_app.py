@@ -350,14 +350,14 @@ def create_ui():
                         gr.Markdown("### 🖼️ Image Settings")
                         with gr.Row():
                             image_width = gr.Slider(
-                                minimum=256,
+                                minimum=128,
                                 maximum=1024,
                                 step=64,
                                 value=512,
                                 label="Width"
                             )
                             image_height = gr.Slider(
-                                minimum=256,
+                                minimum=128,
                                 maximum=1024,
                                 step=64,
                                 value=512,
