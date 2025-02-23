@@ -1,11 +1,11 @@
 # Flux Generator: macOS MLX-Powered Image Generation with Open WebUI compatable API
-This repository is based on the Flux example from this repository.
+This repository is based on the image generation examples from this repository.
 https://github.com/ml-explore/mlx-examples/tree/main/flux
 
 ## Features
 
 - Text-to-image generation
-- Multiple model options (schnell/dev)
+- Multiple model options (black-forest-labs Flux schnell/dev, stabilityai sdxl-turbo/stable-diffusion-2-1)
 - Customizable image size and generation parameters
 - Memory usage reporting
 - API compatibility for third-party UIs like Open WebUI
@@ -150,18 +150,10 @@ python3.11 txt2image.py --model schnell \
 Once the server is running (either via `run_flux.sh` or manually):
 
 1. Open your browser and navigate to http://127.0.0.1:7860
-2. Enter a prompt and click the generate button
-3. On first use, the model will be downloaded (approximately 23 GB)
+2. Enter a prompt, select a model and click the generate button
+3. On first use, the model will be downloaded (approximately 30 GB)
 4. Download progress will be visible in the terminal
 5. Once downloaded, image generation will begin
-
-## Generating image uising the flux generator UI
-
-- The UI is accessable here http://127.0.0.1:7860
-- Enter a prompt and click generate buttons
-- On the first use the model will get downloaded which is about 23 GB in size
-- The downloaded status is visible on the terminal
-- Once the model is downloaded the image generation will start
 
 
 ## API Integration
@@ -172,8 +164,6 @@ Check this tutorial for Open WebUI integration instructions:
 )
 
 ### Starting the Server
-
-The server supports two access modes with different security levels:
 
 1. Local Only (Most Secure):
    ```bash
@@ -197,9 +187,13 @@ Since Flux Generator requires direct access to Apple Silicon hardware, it runs n
 
 1. Start Flux Generator with network access:
    ```bash
+   ./run_flux.sh
+   ```
+   or
+   ```bash
    ./run_flux.sh --network
    ```
-   This will start the server and listen on all interfaces (required for Docker integration).
+   This will start the server and listen on all interfaces (--network flag required for Docker integration if running on a different machine).
 
 2. Run Open WebUI in Docker:
    ```bash
@@ -352,6 +346,7 @@ Model files are stored in the HuggingFace cache directory (`~/.cache/huggingface
   - Sr. Voice Over IP Engineer
   - Expert in Kamailio and open-source VoIP
   - Cloud integration specialist
+  - Learning LLMOps
 
 • 🌐 **Community Contributions**:
   - Blog: [voipnuggets.com](https://voipnuggets.com)
