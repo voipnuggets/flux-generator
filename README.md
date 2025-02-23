@@ -1,6 +1,4 @@
 # Flux Generator: macOS MLX-Powered Image Generation with Open WebUI compatable API
-This repository is based on the image generation examples from this repository.
-https://github.com/ml-explore/mlx-examples/tree/main/flux
 
 ## Features
 
@@ -11,6 +9,20 @@ https://github.com/ml-explore/mlx-examples/tree/main/flux
 - API compatibility for third-party UIs like Open WebUI
 - Unified server for both UI and API
 - Configurable network access modes
+
+## Optimized for Apple Silicon with MLX
+
+This repository utilizes the MLX framework, designed specifically for Apple Silicon, to provide optimized performance for Black Forest Flux and Stable Diffusion image generation. MLX leverages the unified memory architecture of Apple's M-series chips, enabling faster and more efficient computations.
+
+### Why MLX?
+
+* **Performance:** Experience significant speed improvements compared to other frameworks on Apple Silicon.
+* **Local Execution:** Run Stable Diffusion models locally on your Mac, ensuring data privacy and enabling offline use.
+* **Fine-Tuning:** MLX provides a great environment for fine-tuning models on apple silicon.
+
+For more examples of what MLX can do, check out the official mlx-examples repository: [https://github.com/ml-explore/mlx-examples](https://github.com/ml-explore/mlx-examples)
+
+This repository is designed to give apple silicon users a fast and easy way to generate images locally.
 
 ## UI Screenshots:
 ![Flux App UI](flux_app_ui.jpg)
