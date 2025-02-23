@@ -13,6 +13,12 @@ import webbrowser
 from flux import FluxPipeline
 from flux.utils import configs, hf_hub_download
 import os
+
+# Add stable diffusion directory to Python path
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(SCRIPT_DIR, "stable_diffusion"))
+
+from stable_diffusion import StableDiffusion, StableDiffusionXL
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,7 +50,7 @@ class SDAPIRequest(BaseModel):
     batch_size: int = 1
     n_iter: int = 1
     seed: int = -1
-    model: str = "schnell"
+    model: str = "schnell"  # Options: "schnell", "dev", "flux-schnell", "flux-dev", "stabilityai/stable-diffusion-2-1-base", "stabilityai/sdxl-turbo"
 
 class SDAPIResponse(BaseModel):
     images: List[str]
@@ -55,15 +61,27 @@ class FluxAPI:
     """Unified API for both UI and external API calls"""
     def __init__(self):
         self.pipeline = None
+        self.sd_pipeline = None
         self.current_model = None
     
     def init_pipeline(self, model: str):
         """Initialize the pipeline if needed"""
-        if self.pipeline is None or self.current_model != model:
-            model_name = "flux-" + model
-            self.pipeline = FluxPipeline(model_name)
-            self.current_model = model
-        return self.pipeline
+        if model.startswith("stabilityai/"):
+            # Handle Stability AI models directly
+            if self.sd_pipeline is None or self.current_model != model:
+                if "sdxl-turbo" in model:
+                    self.sd_pipeline = StableDiffusionXL("stabilityai/sdxl-turbo", float16=True)
+                else:
+                    self.sd_pipeline = StableDiffusion("stabilityai/stable-diffusion-2-1-base", float16=True)
+                self.current_model = model
+            return self.sd_pipeline
+        else:
+            # Handle Flux models by adding 'flux-' prefix if needed
+            flux_model = model if model.startswith("flux-") else f"flux-{model}"
+            if self.pipeline is None or self.current_model != flux_model:
+                self.pipeline = FluxPipeline(flux_model)
+                self.current_model = flux_model
+            return self.pipeline
     
     async def txt2img(self, request: SDAPIRequest) -> SDAPIResponse:
         """Generate images from text"""
@@ -117,21 +135,38 @@ class FluxAPI:
         
         # Parse image size
         latent_size = (height // 8, width // 8)
-        steps = steps or (50 if model == "dev" else 2)
         
-        # Generate latents
-        latents = pipeline.generate_latents(
-            prompt,
-            n_images=batch_size * n_iter,
-            num_steps=steps,
-            latent_size=latent_size,
-            guidance=guidance,
-            seed=seed
-        )
+        if model.startswith("stabilityai/"):
+            # Use stable diffusion pipeline
+            steps = steps or (2 if "sdxl-turbo" in model else 50)
+            guidance = guidance or (0.0 if "sdxl-turbo" in model else 7.5)
+            
+            # Generate latents
+            latents = pipeline.generate_latents(
+                prompt,
+                n_images=batch_size * n_iter,
+                cfg_weight=guidance,
+                num_steps=steps,
+                seed=seed
+            )
+        else:
+            # Use Flux pipeline
+            steps = steps or (50 if model == "flux-dev" else 2)
+            
+            # Generate latents
+            latents = pipeline.generate_latents(
+                prompt,
+                n_images=batch_size * n_iter,
+                num_steps=steps,
+                latent_size=latent_size,
+                guidance=guidance,
+                seed=seed
+            )
         
         # Process latents
-        conditioning = next(latents)
-        mx.eval(conditioning)
+        if not model.startswith("stabilityai/"):
+            conditioning = next(latents)
+            mx.eval(conditioning)
         
         for x_t in latents:
             mx.eval(x_t)
@@ -139,22 +174,28 @@ class FluxAPI:
         # Decode images
         decoded = []
         for i in range(0, batch_size * n_iter):
-            decoded.append(pipeline.decode(x_t[i:i+1], latent_size))
+            if model.startswith("stabilityai/"):
+                # Stable Diffusion decode doesn't need latent_size
+                decoded.append(pipeline.decode(x_t[i:i+1]))
+            else:
+                # Flux decode needs latent_size
+                decoded.append(pipeline.decode(x_t[i:i+1], latent_size))
             mx.eval(decoded[-1])
         
         # Convert to PIL Images or base64
         images = []
-        for img_tensor in decoded:
+        for i, img_tensor in enumerate(decoded):
             img_array = (mx.array(img_tensor[0]) * 255).astype(mx.uint8)
             pil_image = Image.fromarray(np.array(img_array))
             
             if return_pil:
                 images.append(pil_image)
             else:
+                # Convert to base64 for API response
                 buffered = io.BytesIO()
                 pil_image.save(buffered, format="PNG")
                 img_str = base64.b64encode(buffered.getvalue()).decode()
-                images.append(f"data:image/png;base64,{img_str}")
+                images.append(img_str)
         
         return images
     
@@ -162,22 +203,70 @@ class FluxAPI:
         """List available models"""
         return [
             {
-                "title": "Flux Schnell",
+                "title": "flux-schnell",
+                "name": "Flux Schnell (Fast)",
                 "model_name": "flux-schnell",
-                "filename": "flux-schnell"
+                "hash": None,
+                "sha256": None,
+                "filename": "flux-schnell.safetensors",
+                "config": None
             },
             {
-                "title": "Flux Dev",
+                "title": "flux-dev",
+                "name": "Flux Dev (High Quality)",
                 "model_name": "flux-dev",
-                "filename": "flux-dev"
+                "hash": None,
+                "sha256": None,
+                "filename": "flux-dev.safetensors",
+                "config": None
+            },
+            {
+                "title": "stabilityai/stable-diffusion-2-1-base",
+                "name": "SD 2.1 Base (High Quality)",
+                "model_name": "stabilityai/stable-diffusion-2-1-base",
+                "hash": None,
+                "sha256": None,
+                "filename": "sd-2-1-base.safetensors",
+                "config": None
+            },
+            {
+                "title": "stabilityai/sdxl-turbo",
+                "name": "SDXL Turbo (Fast)",
+                "model_name": "stabilityai/sdxl-turbo",
+                "hash": None,
+                "sha256": None,
+                "filename": "sdxl-turbo.safetensors",
+                "config": None
             }
         ]
     
     def get_options(self):
         """Get current options"""
         return {
-            "sd_model_checkpoint": "flux-schnell",
-            "sd_backend": "Flux MLX"
+            "sd_model_checkpoint": "stabilityai/stable-diffusion-2-1-base",  # Set SD 2.1 as default
+            "sd_backend": "Flux MLX",
+            "sd_model_list": [
+                {
+                    "title": "Flux Schnell (Fast)",
+                    "name": "flux-schnell",
+                    "model_name": "flux-schnell"
+                },
+                {
+                    "title": "SD 2.1 Base (High Quality)",
+                    "name": "stabilityai/stable-diffusion-2-1-base",
+                    "model_name": "stabilityai/stable-diffusion-2-1-base"
+                },
+                {
+                    "title": "Flux Dev (High Quality)",
+                    "name": "flux-dev",
+                    "model_name": "flux-dev"
+                },
+                {
+                    "title": "SDXL Turbo (Fast)",
+                    "name": "stabilityai/sdxl-turbo",
+                    "model_name": "stabilityai/sdxl-turbo"
+                }
+            ]
         }
     
     def set_options(self, options: dict):
@@ -269,280 +358,217 @@ def find_available_port(host: str, start_port: int, max_attempts: int = 10) -> i
     raise RuntimeError(f"Could not find an available port in range {start_port}-{start_port + max_attempts - 1}")
 
 def create_ui():
-    """Create the Gradio interface"""
-    css = """
-        .container { max-width: 1200px; margin: auto; }
-        .prompt-box { min-height: 100px; }
-        .status-box { margin-top: 10px; }
-        .generate-btn { min-height: 60px; }
-    """
-    
-    blocks = gr.Blocks(theme=gr.themes.Soft(), css=css)
-    with blocks:
-        # Main Content
-        with gr.Column(elem_classes="container"):
-            gr.Markdown(
-                """
-                # 🎨 FLUX Image Generator
-                Generate beautiful images from text using the FLUX model on Apple Silicon Macs.
-                """
-            )
-            
-            with gr.Row():
-                # Left Column - Controls
-                with gr.Column(scale=1):
-                    # Generation Controls
-                    prompt = gr.Textbox(
-                        label="Prompt",
-                        placeholder="Enter your prompt here... (e.g., 'a beautiful moonset over the ocean, highly detailed, 4k')",
-                        lines=3,
-                        elem_classes="prompt-box"
-                    )
-                    
-                    with gr.Group():
-                        gr.Markdown("### ⚙️ Model Settings")
-                        model_type = gr.Radio(
-                            choices=["schnell", "dev"],
-                            value="schnell",
-                            label="Model Type",
-                            info="Schnell (2 steps) is faster, Dev (50 steps) is higher quality"
-                        )
-                        
-                        with gr.Row():
+    """Create the Gradio UI interface"""
+    with gr.Blocks(title="Flux Generator") as demo:
+        gr.Markdown(
+            """
+            # 🌊 Flux Generator
+            Generate beautiful images using Apple Silicon optimized models.
+            """
+        )
+
+        with gr.Row():
+            with gr.Column(scale=4):
+                prompt = gr.Textbox(
+                    label="Prompt",
+                    placeholder="Enter your prompt here...",
+                    lines=3,
+                    interactive=True
+                )
+                
+                # Model Selection - Changed from Radio to Dropdown
+                gr.Markdown("### 🎨 Model Selection")
+                model_choices = [
+                    "Flux Schnell (Fast, 2 steps)",
+                    "Flux Dev (High Quality, 50 steps)",
+                    "SD 2.1 Base (High Quality)",
+                    "SDXL Turbo (Fast)"
+                ]
+                model = gr.Dropdown(
+                    choices=model_choices,
+                    value="Flux Schnell (Fast, 2 steps)",
+                    label="Select Model",
+                    interactive=True
+                )
+                
+                # Generation Parameters
+                with gr.Group():
+                    gr.Markdown("#### ⚙️ Generation Parameters")
+                    with gr.Row():
+                        with gr.Column(scale=1):
                             num_steps = gr.Slider(
                                 minimum=1,
                                 maximum=100,
                                 step=1,
-                                value=2,  # Default to 2 steps since Schnell is the default model
-                                label="Steps",
-                                info="Leave empty for default (2 for Schnell, 50 for Dev)"
+                                value=2,
+                                label="Steps"
                             )
-                            guidance = gr.Slider(
-                                minimum=1.0,
+                            guidance_scale = gr.Slider(
+                                minimum=0.0,
                                 maximum=20.0,
                                 step=0.5,
                                 value=4.0,
-                                label="Guidance Scale",
-                                info="Higher values = stronger adherence to prompt"
+                                label="Guidance Scale"
                             )
-                    
-                    # Add model-specific parameter updates
-                    def update_model_params(model):
-                        if model == "dev":
-                            return {
-                                num_steps: gr.update(value=50, minimum=1, maximum=100, interactive=True),
-                                guidance: gr.update(value=4.0, interactive=True)
-                            }
-                        else:  # schnell
-                            return {
-                                num_steps: gr.update(value=2, minimum=1, maximum=100, interactive=True),
-                                guidance: gr.update(value=4.0, interactive=True)
-                            }
-                    
-                    # Connect the model selection to parameter updates
-                    model_type.change(
-                        fn=update_model_params,
-                        inputs=[model_type],
-                        outputs=[num_steps, guidance]
-                    )
-                    
-                    with gr.Group():
-                        gr.Markdown("### 🖼️ Image Settings")
-                        with gr.Row():
-                            image_width = gr.Slider(
-                                minimum=128,
-                                maximum=1024,
-                                step=64,
-                                value=512,
-                                label="Width"
-                            )
-                            image_height = gr.Slider(
-                                minimum=128,
-                                maximum=1024,
-                                step=64,
-                                value=512,
-                                label="Height"
-                            )
-                        
+                        with gr.Column(scale=1):
+                            with gr.Row():
+                                width = gr.Slider(
+                                    minimum=256,
+                                    maximum=1024,
+                                    step=64,
+                                    value=512,
+                                    label="Width"
+                                )
+                                height = gr.Slider(
+                                    minimum=256,
+                                    maximum=1024,
+                                    step=64,
+                                    value=512,
+                                    label="Height"
+                                )
                             seed = gr.Number(
-                                label="Seed",
-                                value=None,
-                                precision=0,
-                                info="Leave empty for random seed"
+                                value=-1,
+                                label="Seed (-1 for random)",
+                                precision=0
                             )
-                        
-                        generate_btn = gr.Button(
-                            "🎨 Generate Image",
-                            variant="primary",
-                            elem_classes="generate-btn"
-                        )
                 
-                # Right Column - Output
-                with gr.Column(scale=1):
-                    output_image = gr.Image(
-                        label="Generated Image",
-                        type="pil",
-                        show_download_button=True,
-                        show_label=True
-                    )
-                    image_info = gr.Markdown(
-                        visible=True,
-                        value="*Click 'Generate Image' to create a new image*"
-                    )
-                    
-                    # Add Stats Box
-                    with gr.Group(visible=False) as stats_group:
-                        gr.Markdown("### 🔍 Generation Stats")
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                text_mem = gr.Markdown("**Text Encoding Memory:** N/A")
-                                gen_mem = gr.Markdown("**Generation Memory:** N/A")
-                                decode_mem = gr.Markdown("**Decoding Memory:** N/A")
-                                total_mem = gr.Markdown("**Total Peak Memory:** N/A")
-                            with gr.Column(scale=1):
-                                text_time = gr.Markdown("**Text Encoding Time:** N/A")
-                                gen_time = gr.Markdown("**Generation Time:** N/A")
-                                decode_time = gr.Markdown("**Decoding Time:** N/A")
-                                total_time = gr.Markdown("**Total Time:** N/A")
-            
-            # Event handlers
-            async def on_generate(prompt, model_type, num_steps, guidance_scale, width, height, seed):
-                try:
-                    print("\n=== Generation Request Started ===")
-                    print(f"Prompt: {prompt}")
-                    print(f"Model: {model_type}")
-                    print(f"Steps: {num_steps}")
-                    print(f"Guidance: {guidance_scale}")
-                    print(f"Size: {width}x{height}")
-                    print(f"Seed: {seed}")
+                generate = gr.Button("Generate", variant="primary")
 
-                    # Reset peak memory tracking
-                    mx.metal.reset_peak_memory()
+            with gr.Column(scale=6):
+                result = gr.Image(label="Generated Image", interactive=False)
+                image_info = gr.Markdown(visible=True, value="*Click 'Generate' to create a new image*")
 
-                    # Track timing
-                    import time
-                    start_total = time.time()
+                # Add Stats Box
+                with gr.Group(visible=True) as stats_group:
+                    gr.Markdown("### 🔍 Generation Stats")
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            text_mem = gr.Markdown("**Text Encoding Memory:** N/A")
+                            gen_mem = gr.Markdown("**Generation Memory:** N/A")
+                            total_mem = gr.Markdown("**Total Peak Memory:** N/A")
+                        with gr.Column(scale=1):
+                            text_time = gr.Markdown("**Text Encoding Time:** N/A")
+                            gen_time = gr.Markdown("**Generation Time:** N/A")
+                            total_time = gr.Markdown("**Total Time:** N/A")
 
-                    # Create API request
-                    request = SDAPIRequest(
-                        prompt=prompt,
-                        model=model_type,
-                        width=width,
-                        height=height,
-                        steps=num_steps,
-                        cfg_scale=guidance_scale,
-                        seed=seed if seed is not None else -1,
-                        batch_size=1,
-                        n_iter=1
-                    )
-                    
-                    # Initialize pipeline if needed
-                    start_text = time.time()
-                    pipeline = api.init_pipeline(model_type)
-                    
-                    # Text encoding (includes pipeline initialization)
-                    text_mem = mx.metal.get_peak_memory() / 1024**3
-                    text_time = time.time() - start_text
-                    mx.metal.reset_peak_memory()
-                    
-                    # Generation
-                    start_gen = time.time()
-                    latents = pipeline.generate_latents(
-                        prompt,
-                        n_images=1,
-                        num_steps=num_steps or (50 if model_type == "dev" else 2),
-                        latent_size=(height // 8, width // 8),
-                        guidance=guidance_scale,
-                        seed=seed if seed is not None else None
-                    )
-                    
-                    # Process latents
-                    conditioning = next(latents)
-                    mx.eval(conditioning)
-                    
-                    for x_t in latents:
-                        mx.eval(x_t)
-                    
-                    gen_mem = mx.metal.get_peak_memory() / 1024**3
-                    gen_time = time.time() - start_gen
-                    mx.metal.reset_peak_memory()
-                    
-                    # Decoding
-                    start_decode = time.time()
-                    decoded = []
-                    for i in range(1):  # Single image for now
-                        decoded.append(pipeline.decode(x_t[i:i+1], (height // 8, width // 8)))
-                        mx.eval(decoded[-1])
-                    
-                    decode_mem = mx.metal.get_peak_memory() / 1024**3
-                    decode_time = time.time() - start_decode
-                    total_time = time.time() - start_total
-                    
-                    # Convert to PIL Image
-                    img_array = (mx.array(decoded[0][0]) * 255).astype(mx.uint8)
-                    pil_image = Image.fromarray(np.array(img_array))
-                    
-                    # Format stats strings
-                    stats = {
-                        "text_mem": f"**Text Encoding Memory:** {text_mem:.2f}GB",
-                        "gen_mem": f"**Generation Memory:** {gen_mem:.2f}GB",
-                        "decode_mem": f"**Decoding Memory:** {decode_mem:.2f}GB",
-                        "total_mem": f"**Total Peak Memory:** {max(text_mem, gen_mem, decode_mem):.2f}GB",
-                        "text_time": f"**Text Encoding Time:** {text_time:.2f}s",
-                        "gen_time": f"**Generation Time:** {gen_time:.2f}s",
-                        "decode_time": f"**Decoding Time:** {decode_time:.2f}s",
-                        "total_time": f"**Total Time:** {total_time:.2f}s"
-                    }
-                    
-                    print("Generation completed successfully")
-                    print(f"Memory usage: Text={text_mem:.2f}GB, Gen={gen_mem:.2f}GB, Decode={decode_mem:.2f}GB")
-                    print(f"Timing: Text={text_time:.2f}s, Gen={gen_time:.2f}s, Decode={decode_time:.2f}s, Total={total_time:.2f}s")
-                    
-                    return [
-                        pil_image,  # Image
-                        gr.Markdown(value=f"Generated with Flux {model_type} model"),  # Info
-                        gr.Group(visible=True),  # Stats group visibility
-                        *[gr.Markdown(value=v) for v in stats.values()]  # Stats values
-                    ]
-                except Exception as e:
-                    print(f"Exception in on_generate: {str(e)}")
-                    return [
-                        None,  # Image
-                        gr.Markdown(visible=True, value=f"❌ Error: {str(e)}"),  # Info
-                        gr.Group(visible=False),  # Hide stats
-                        *[gr.Markdown(value="N/A") for _ in range(8)]  # Reset stats
-                    ]
-                finally:
-                    print("=== Generation Request Ended ===\n")
-            
-            # Connect event handlers
-            generate_btn.click(
-                fn=on_generate,
-                inputs=[
-                    prompt,
-                    model_type,
-                    num_steps,
-                    guidance,
-                    image_width,
-                    image_height,
-                    seed
-                ],
-                outputs=[
-                    output_image,
-                    image_info,
-                    stats_group,
-                    text_mem,
-                    gen_mem,
-                    decode_mem,
-                    total_mem,
-                    text_time,
-                    gen_time,
-                    decode_time,
-                    total_time
+        def update_model_params(model_choice):
+            """Update parameters based on selected model"""
+            if "Schnell" in model_choice:
+                return 2, 4.0  # steps, guidance
+            elif "Dev" in model_choice:
+                return 50, 4.0
+            elif "2.1" in model_choice:
+                return 50, 7.5
+            else:
+                return 2, 0.0
+
+        def generate_with_stats(prompt, model_choice, steps, guidance, width, height, seed):
+            try:
+                # Get the actual model key based on selection
+                if "Schnell" in model_choice:
+                    model = "flux-schnell"
+                elif "Dev" in model_choice:
+                    model = "flux-dev"
+                elif "2.1" in model_choice:
+                    model = "stabilityai/stable-diffusion-2-1-base"
+                else:
+                    model = "stabilityai/sdxl-turbo"
+                
+                # Reset peak memory tracking
+                mx.metal.reset_peak_memory()
+
+                # Track timing
+                import time
+                start_total = time.time()
+
+                # Initialize pipeline
+                start_text = time.time()
+                pipeline = api.init_pipeline(model)
+                text_mem = mx.metal.get_peak_memory() / 1024**3
+                text_time = time.time() - start_text
+                mx.metal.reset_peak_memory()
+
+                # Generate image
+                start_gen = time.time()
+                image_b64 = api.generate_images(
+                    prompt=prompt,
+                    model=model,
+                    steps=steps,
+                    guidance=guidance,
+                    width=width,
+                    height=height,
+                    seed=seed if seed >= 0 else None
+                )[0]
+
+                # Convert base64 back to PIL Image for Gradio
+                if image_b64 and not isinstance(image_b64, Image.Image):
+                    image_bytes = base64.b64decode(image_b64)
+                    image = Image.open(io.BytesIO(image_bytes))
+                else:
+                    image = image_b64
+
+                gen_mem = mx.metal.get_peak_memory() / 1024**3
+                gen_time = time.time() - start_gen
+                total_time = time.time() - start_total
+
+                # Get friendly model name
+                model_name = model_choice
+
+                return [
+                    image,  # Image
+                    f"Generated with {model_name}",  # Info
+                    f"**Text Encoding Memory:** {text_mem:.2f}GB",  # text_mem
+                    f"**Generation Memory:** {gen_mem:.2f}GB",  # gen_mem
+                    f"**Total Peak Memory:** {max(text_mem, gen_mem):.2f}GB",  # total_mem
+                    f"**Text Encoding Time:** {text_time:.2f}s",  # text_time
+                    f"**Generation Time:** {gen_time:.2f}s",  # gen_time
+                    f"**Total Time:** {total_time:.2f}s"  # total_time
                 ]
-            )
-    
-    return blocks
+            except Exception as e:
+                error_msg = f"❌ Error: {str(e)}"
+                return [
+                    None,  # Image
+                    error_msg,  # Info
+                    "**Text Encoding Memory:** N/A",  # text_mem
+                    "**Generation Memory:** N/A",  # gen_mem
+                    "**Total Peak Memory:** N/A",  # total_mem
+                    "**Text Encoding Time:** N/A",  # text_time
+                    "**Generation Time:** N/A",  # gen_time
+                    "**Total Time:** N/A"  # total_time
+                ]
+
+        # Update the model parameter changes
+        model.change(
+            fn=update_model_params,
+            inputs=[model],
+            outputs=[num_steps, guidance_scale]
+        )
+
+        # Update the generate click handler
+        generate.click(
+            fn=generate_with_stats,
+            inputs=[
+                prompt,
+                model,  # Single model input now
+                num_steps,
+                guidance_scale,
+                width,
+                height,
+                seed
+            ],
+            outputs=[
+                result,
+                image_info,
+                text_mem,
+                gen_mem,
+                total_mem,
+                text_time,
+                gen_time,
+                total_time
+            ]
+        )
+
+    return demo
 
 # Export the generate_images function at module level
 def generate_images(
