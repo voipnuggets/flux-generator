@@ -82,13 +82,24 @@ class TestAPI(unittest.TestCase):
             
             models = response.json()
             self.assertTrue(isinstance(models, list))
-            self.assertEqual(len(models), 2)  # schnell and dev models
+            self.assertEqual(len(models), 4)  # All models (Flux + SD)
             
-            # Check model properties
+            # Check all required properties are present
             for model in models:
                 self.assertIn("title", model)
+                self.assertIn("name", model)
                 self.assertIn("model_name", model)
                 self.assertIn("filename", model)
+                self.assertIn("hash", model)
+                self.assertIn("sha256", model)
+                self.assertIn("config", model)
+                
+                # Verify name matches title
+                self.assertEqual(model["name"], model["title"])
+                
+                # Verify filename ends with .safetensors
+                self.assertTrue(model["filename"].endswith(".safetensors"), 
+                              "Model filename should end with .safetensors")
     
     def test_options_endpoint(self):
         """Test the options endpoints"""

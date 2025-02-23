@@ -1,16 +1,17 @@
 # Core ML dependencies
-mlx>=0.0.8
+mlx>=0.11
 numpy>=1.24.0
 transformers==4.48.2
 safetensors==0.5.2
 huggingface-hub==0.28.1
 tokenizers==0.21.0
 sentencepiece==0.2.0
+regex
 
 # Web interface and API
-fastapi>=0.100.0
+fastapi>=0.104.1
 gradio>=4.0.0
-uvicorn>=0.23.0
+uvicorn>=0.24.0
 python-multipart>=0.0.6
 websockets==14.2
 httpx==0.28.1
@@ -28,3 +29,8 @@ PyYAML==6.0.2
 # Optional performance improvements
 uvloop==0.21.0  # For better async performance
 orjson==3.10.15  # For faster JSON processing
+
+# Stable Diffusion dependencies
+accelerate>=0.27.1
+diffusers>=0.25.0
+einops>=0.7.0

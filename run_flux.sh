@@ -131,22 +131,54 @@ check_models() {
     printf "\n%s\n" "${delimiter}"
     printf "Checking model files...\n"
     
-    MODEL_DIR="$HOME/.cache/huggingface/hub/models--black-forest-labs--FLUX.1-schnell"
-    if [ -d "$MODEL_DIR" ]; then
-        SIZE=$(du -sh "$MODEL_DIR" | cut -f1)
+    # Check Flux models
+    FLUX_MODEL_DIR="$HOME/.cache/huggingface/hub/models--black-forest-labs--FLUX.1-schnell"
+    if [ -d "$FLUX_MODEL_DIR" ]; then
+        SIZE=$(du -sh "$FLUX_MODEL_DIR" | cut -f1)
         # Check if size is at least 23GB
-        SIZE_BYTES=$(du -s "$MODEL_DIR" | cut -f1)
+        SIZE_BYTES=$(du -s "$FLUX_MODEL_DIR" | cut -f1)
         if [ "$SIZE_BYTES" -lt 24000000 ]; then  # Roughly 23GB in KB
-            printf "${YELLOW}Warning: Model files found but may be incomplete (${SIZE})${NC}\n"
+            printf "${YELLOW}Warning: Flux model files found but may be incomplete (${SIZE})${NC}\n"
             printf "Expected size: ~23GB\n"
             printf "Found size: ${SIZE}\n"
             printf "Models will be re-downloaded if needed\n"
         else
-            printf "${GREEN}Found existing model files (${SIZE})${NC}\n"
+            printf "${GREEN}Found existing Flux model files (${SIZE})${NC}\n"
         fi
     else
-        printf "${YELLOW}Model files will be downloaded on first use (~23GB required)${NC}\n"
+        printf "${YELLOW}Flux model files will be downloaded on first use (~23GB required)${NC}\n"
     fi
+
+    # Check Stable Diffusion models
+    SD_BASE_DIR="$HOME/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1-base"
+    SDXL_DIR="$HOME/.cache/huggingface/hub/models--stabilityai--sdxl-turbo"
+
+    printf "\nStable Diffusion Models:\n"
+    
+    if [ -d "$SD_BASE_DIR" ]; then
+        SIZE=$(du -sh "$SD_BASE_DIR" | cut -f1)
+        printf "${GREEN}✓ Found Stable Diffusion 2.1 model (${SIZE})${NC}\n"
+    else
+        printf "${YELLOW}✗ Stable Diffusion 2.1 model not found${NC}\n"
+        printf "  Run: huggingface-cli download stabilityai/stable-diffusion-2-1-base\n"
+    fi
+
+    if [ -d "$SDXL_DIR" ]; then
+        SIZE=$(du -sh "$SDXL_DIR" | cut -f1)
+        printf "${GREEN}✓ Found SDXL Turbo model (${SIZE})${NC}\n"
+    else
+        printf "${YELLOW}✗ SDXL Turbo model not found${NC}\n"
+        printf "  Run: huggingface-cli download stabilityai/sdxl-turbo\n"
+    fi
+
+    if [ ! -d "$SD_BASE_DIR" ] || [ ! -d "$SDXL_DIR" ]; then
+        printf "\n${YELLOW}Note: To download missing Stable Diffusion models:${NC}\n"
+        printf "1. Accept model licenses at:\n"
+        printf "   - https://huggingface.co/stabilityai/stable-diffusion-2-1-base\n"
+        printf "   - https://huggingface.co/stabilityai/sdxl-turbo\n"
+        printf "2. Run the huggingface-cli commands shown above\n"
+    fi
+
     printf "\n%s\n" "${delimiter}"
 }
 

@@ -307,14 +307,14 @@ The Flux server requires model files to be downloaded before use. You can downlo
    # Install the HuggingFace CLI
    pip install -U "huggingface_hub[cli]"
 
+   # You can also install the CLI using Homebrew:
+   brew install huggingface-cli
+
    # Install hf_transfer for blazingly fast speeds
    pip install hf_transfer
 
    # Login to your HF account
    huggingface-cli login
-   
-   # Enable fast downloads
-   export HF_HUB_ENABLE_HF_TRANSFER=1
 
    # Download Schnell model
    huggingface-cli download black-forest-labs/FLUX.1-schnell
