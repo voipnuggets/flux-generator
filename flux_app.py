@@ -13,14 +13,13 @@ import webbrowser
 from flux import FluxPipeline
 from flux.utils import configs, hf_hub_download
 import os
+from musicgen.musicgen import MusicGen
 
-# Add directories to Python path
+# Add stable diffusion directory to Python path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(SCRIPT_DIR, "stable_diffusion"))
-sys.path.append(os.path.join(SCRIPT_DIR, "musicgen"))
 
 from stable_diffusion import StableDiffusion, StableDiffusionXL
-from musicgen.musicgen import MusicGen
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
