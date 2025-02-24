@@ -1,4 +1,4 @@
-# Flux Generator: macOS MLX-Powered Image & Music Generation with Open WebUI compatable API
+# Flux Generator: macOS MLX-Powered Image & Music Generation with Open WebUI compatable API for Image generation
 
 ## Features
 
@@ -13,7 +13,7 @@
 - Customizable image size and generation parameters
 - Advanced music generation controls
 - Memory usage reporting
-- API compatibility for third-party UIs like Open WebUI
+- API compatibility for Image generation for third-party UIs like Open WebUI
 - Unified server for both UI and API
 - Configurable network access modes
 
@@ -363,22 +363,27 @@ The Flux server requires model files to be downloaded before use. You can downlo
    huggingface-cli download facebook/musicgen-medium
    ```
 
-   Note: Required disk space:
-   - Each image model is approximately 24GB
-   - MusicGen model is approximately 3.5GB
-   
-   Downloads include:
-   - Model weights
-   - Encoders and tokenizers
-   - Additional components specific to each model
-
 3. Using the command-line interface:
+   Note: Each Flux model is approximately 24GB in size, the SD models are bigger. The download includes:
+   - Model weights (flux1-{model}.safetensors)
+   - Autoencoder (ae.safetensors)
+   - Text encoders and tokenizers
+   
+   # Download command for all models
    ```bash
-   # This will download the model if not present locally
-   python3.11 txt2image.py --model schnell --steps 1 --verbose "A photo of an astronaut riding a horse on Mars."
+   huggingface-cli download black-forest-labs/FLUX.1-schnell
+   huggingface-cli download black-forest-labs/FLUX.1-dev (needs to ask for access, follow the onscreen instructions when you run this command)
+   huggingface-cli download stabilityai/stable-diffusion-2-1-base
+   huggingface-cli download stabilityai/sdxl-turbo
+   huggingface-cli download facebook/musicgen-medium
    ```
-   - The download progress will be shown in the terminal
-   - After download completes, it will generate the image
+
+Model Repos:
+https://huggingface.co/black-forest-labs/FLUX.1-schnell
+https://huggingface.co/black-forest-labs/FLUX.1-dev
+https://huggingface.co/stabilityai/stable-diffusion-2-1-base
+https://huggingface.co/stabilityai/sdxl-turbo
+https://huggingface.co/facebook/musicgen-medium
 
 Model files are stored in the HuggingFace cache directory (`~/.cache/huggingface/hub/`).
 
@@ -408,68 +413,3 @@ If you find this project helpful, consider supporting my work:
 <img src="bmc_qr.png" alt="Buy Me A Coffee QR Code" width="200" height="200">
 
 [☕ Buy Me a Coffee](https://buymeacoffee.com/akashg)
-
-## Testing
-
-The project includes several test suites to ensure everything works correctly:
-
-### Shell Script Tests
-
-To test the `run_flux.sh` script:
-```bash
-# Make the test script executable
-chmod +x test/test_run_script.sh
-
-# Run the tests
-./test/test_run_script.sh
-```
-
-These tests verify:
-- Command-line argument handling
-- System requirement checks
-- Virtual environment management
-- Memory reporting
-- Model file checking
-- Network access modes
-
-### Python Tests
-
-To run the Python tests:
-```bash
-# Install test requirements
-pip install -r test/requirements-test.txt
-
-# Run all tests with coverage report
-python3.11 test/run_tests.py
-```
-
-The Python tests cover:
-- API endpoints and functionality
-- UI components and handlers
-- Model generation
-- Docker integration
-- Network connectivity
-
-### Integration Tests
-
-For testing Docker integration:
-```bash
-# Test connectivity between Flux and Open WebUI
-python3.11 test/test_connectivity.py
-```
-
-This verifies:
-- API accessibility
-- Docker network configuration
-- Model availability
-- Generation capabilities
-
-### Test Coverage
-
-The test suite provides coverage reports for:
-- Python code (via pytest-cov)
-- API endpoints
-- UI components
-- Shell scripts
-
-Coverage reports are generated in the `coverage_report` directory.
