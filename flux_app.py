@@ -14,16 +14,19 @@ from flux import FluxPipeline
 from flux.utils import configs, hf_hub_download
 import os
 from musicgen.musicgen import MusicGen
+from musicgen.utils import save_audio
+import tempfile
+import time
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+import json
 
 # Add stable diffusion directory to Python path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(SCRIPT_DIR, "stable_diffusion"))
 
 from stable_diffusion import StableDiffusion, StableDiffusionXL
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-import json
 
 # Create FastAPI app
 app = FastAPI()
@@ -435,7 +438,6 @@ def create_musicgen_ui():
                 mx.metal.reset_peak_memory()
                 
                 # Track timing
-                import time
                 start_total = time.time()
                 
                 # Initialize model
@@ -455,16 +457,12 @@ def create_musicgen_ui():
                 gen_time = time.time() - start_gen
                 total_time = time.time() - start_total
                 
-                # Convert audio to WAV format
-                import scipy.io.wavfile as wav
-                import tempfile
-                
+                # Save audio to temporary file
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
-                    wav.write(temp_file.name, model.sampling_rate, audio)
-                    audio_path = temp_file.name
+                    save_audio(temp_file.name, audio, model.sampling_rate)
                 
                 return [
-                    (audio_path, model.sampling_rate),  # Audio output
+                    temp_file.name,  # Audio output (just the path)
                     f"Generated music from prompt: {prompt}",  # Info
                     f"**Generation Memory:** {gen_mem:.2f}GB",  # gen_mem
                     f"**Total Peak Memory:** {gen_mem:.2f}GB",  # total_mem
@@ -630,7 +628,6 @@ def create_ui():
                 mx.metal.reset_peak_memory()
 
                 # Track timing
-                import time
                 start_total = time.time()
 
                 # Initialize pipeline

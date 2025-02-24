@@ -10,8 +10,8 @@ import mlx.core as mx
 import mlx.nn as nn
 from tqdm import tqdm
 
-from encodec import EncodecModel
-from t5 import T5
+from .encodec import EncodecModel
+from .t5 import T5
 
 
 class TextConditioner(nn.Module):
