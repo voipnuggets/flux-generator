@@ -329,18 +329,24 @@ The Flux server requires model files to be downloaded before use. You can downlo
    huggingface-cli download black-forest-labs/FLUX.1-dev
    ```
 
-   Note: Each model is approximately 24GB in size. The download includes:
+   Note: Each Flux model is approximately 24GB in size, the SD models are bigger. The download includes:
    - Model weights (flux1-{model}.safetensors)
    - Autoencoder (ae.safetensors)
    - Text encoders and tokenizers
-
-3. Using the command-line interface:
+   
+   # Download command for all models
    ```bash
-   # This will download the model if not present locally
-   python3.11 txt2image.py --model schnell --steps 1 --verbose "A photo of an astronaut riding a horse on Mars."
+   huggingface-cli download black-forest-labs/FLUX.1-schnell
+   huggingface-cli download black-forest-labs/FLUX.1-dev (needs to ask for access, follow the onscreen instructions when you run this command)
+   huggingface-cli download stabilityai/stable-diffusion-2-1-base
+   huggingface-cli download stabilityai/sdxl-turbo
    ```
-   - The download progress will be shown in the terminal
-   - After download completes, it will generate the image
+
+Model Repos:
+https://huggingface.co/black-forest-labs/FLUX.1-schnell
+https://huggingface.co/black-forest-labs/FLUX.1-dev
+https://huggingface.co/stabilityai/stable-diffusion-2-1-base
+https://huggingface.co/stabilityai/sdxl-turbo
 
 Model files are stored in the HuggingFace cache directory (`~/.cache/huggingface/hub/`).
 
