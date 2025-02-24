@@ -36,7 +36,9 @@ For more examples of what MLX can do, check out the official mlx-examples reposi
 This repository is designed to give apple silicon users a fast and easy way to generate images locally.
 
 ## UI Screenshots:
-![Flux App UI](flux_app_ui.jpg)
+![Flux image generation Tab in UI](flux_app_ui_imagegen.jpg)
+![Flux music generation Tab in UI](flux_app_ui_musicgen.jpg)
+
 
 ## Example Generation
 
@@ -205,24 +207,6 @@ The application provides an API that can be used with third-party UIs like Open 
 Check this tutorial for Open WebUI integration instructions:
 [Tutorial](https://voipnuggets.com/2025/02/18/flux-generator-local-image-generation-on-apple-silicon-with-open-webui-integration-using-flux-llm/
 )
-
-### Starting the Server
-
-1. Local Only (Most Secure):
-   ```bash
-   python3.11 flux_app.py
-   ```
-   - Only allows connections from localhost (127.0.0.1)
-   - Best for local development and testing
-
-2. All Networks:
-   ```bash
-   python3.11 flux_app.py --listen-all
-   ```
-   - Allows connections from any network interface
-   - Less secure, use only in trusted networks
-
-The server will start on port 7860 (configurable with `--port`).
 
 ### Integration with Open WebUI
 
