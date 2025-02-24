@@ -171,11 +171,24 @@ check_models() {
         printf "  Run: huggingface-cli download stabilityai/sdxl-turbo\n"
     fi
 
-    if [ ! -d "$SD_BASE_DIR" ] || [ ! -d "$SDXL_DIR" ]; then
-        printf "\n${YELLOW}Note: To download missing Stable Diffusion models:${NC}\n"
+    # Check MusicGen models
+    MUSICGEN_DIR="$HOME/.cache/huggingface/hub/models--facebook--musicgen-medium"
+    printf "\nMusicGen Models:\n"
+    
+    if [ -d "$MUSICGEN_DIR" ]; then
+        SIZE=$(du -sh "$MUSICGEN_DIR" | cut -f1)
+        printf "${GREEN}✓ Found MusicGen Medium model (${SIZE})${NC}\n"
+    else
+        printf "${YELLOW}✗ MusicGen Medium model not found${NC}\n"
+        printf "  Run: huggingface-cli download facebook/musicgen-medium\n"
+    fi
+
+    if [ ! -d "$SD_BASE_DIR" ] || [ ! -d "$SDXL_DIR" ] || [ ! -d "$MUSICGEN_DIR" ]; then
+        printf "\n${YELLOW}Note: To download missing models:${NC}\n"
         printf "1. Accept model licenses at:\n"
         printf "   - https://huggingface.co/stabilityai/stable-diffusion-2-1-base\n"
         printf "   - https://huggingface.co/stabilityai/sdxl-turbo\n"
+        printf "   - https://huggingface.co/facebook/musicgen-medium\n"
         printf "2. Run the huggingface-cli commands shown above\n"
     fi
 

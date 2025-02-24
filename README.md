@@ -1,10 +1,17 @@
-# Flux Generator: macOS MLX-Powered Image Generation with Open WebUI compatable API
+# Flux Generator: macOS MLX-Powered Image & Music Generation with Open WebUI compatable API
 
 ## Features
 
 - Text-to-image generation
-- Multiple model options (black-forest-labs Flux schnell/dev, stabilityai sdxl-turbo/stable-diffusion-2-1)
+- Text-to-music generation (NEW!)
+- Multiple model options:
+  - Image Generation:
+    - black-forest-labs Flux schnell/dev
+    - stabilityai sdxl-turbo/stable-diffusion-2-1
+  - Music Generation:
+    - facebook/musicgen-medium
 - Customizable image size and generation parameters
+- Advanced music generation controls
 - Memory usage reporting
 - API compatibility for third-party UIs like Open WebUI
 - Unified server for both UI and API
@@ -12,7 +19,11 @@
 
 ## Optimized for Apple Silicon with MLX
 
-This repository utilizes the MLX framework, designed specifically for Apple Silicon, to provide optimized performance for Black Forest Flux and Stable Diffusion image generation. MLX leverages the unified memory architecture of Apple's M-series chips, enabling faster and more efficient computations.
+This repository utilizes the MLX framework, designed specifically for Apple Silicon, to provide optimized performance for:
+- Black Forest Flux and Stable Diffusion image generation
+- Facebook's MusicGen audio generation
+
+MLX leverages the unified memory architecture of Apple's M-series chips, enabling faster and more efficient computations.
 
 ### Why MLX?
 
@@ -45,6 +56,7 @@ Parameters:
 - macOS with Apple Silicon (M1/M2/M3)
 - Python 3.10+ (tested with python3.11)
 - MLX framework
+- Additional audio processing libraries for MusicGen
 
 ## Installation & Usage
 
@@ -162,11 +174,30 @@ python3.11 txt2image.py --model schnell \
 Once the server is running (either via `run_flux.sh` or manually):
 
 1. Open your browser and navigate to http://127.0.0.1:7860
-2. Enter a prompt, select a model and click the generate button
-3. On first use, the model will be downloaded (approximately 30 GB)
+2. Choose your desired generation mode:
+   - 🖼️ Image Generation: Enter a prompt, select a model and click generate
+   - 🎵 Music Generation: Enter a music description and adjust parameters
+3. On first use, models will be downloaded:
+   - Image models: approximately 30 GB
+   - MusicGen model: approximately 3.5 GB
 4. Download progress will be visible in the terminal
-5. Once downloaded, image generation will begin
+5. Once downloaded, generation will begin
 
+### Image Generation Parameters
+
+- Model: schnell
+- Size: 512x512
+- Steps: 2
+- CFG Scale: 4.0
+
+### Music Generation Parameters
+
+The music generation interface provides several parameters to control the output:
+
+- **Max Steps**: Controls the length of the generated audio (50-500)
+- **Temperature**: Controls randomness in generation (0.1-2.0)
+- **Top K**: Controls diversity of the output (50-500)
+- **Guidance Scale**: Controls how closely to follow the prompt (1.0-10.0)
 
 ## API Integration
 
@@ -303,7 +334,7 @@ if result["images"]:
 The Flux server requires model files to be downloaded before use. You can download the models in several ways:
 
 1. Automatic download on first use:
-   - Models will be downloaded automatically when you first try to generate an image
+   - Models will be downloaded automatically when you first try to generate
    - The download progress will be visible in the CLI/terminal
    - This may cause a delay on your first generation
 
@@ -327,12 +358,19 @@ The Flux server requires model files to be downloaded before use. You can downlo
 
    # Download Dev model (optional)
    huggingface-cli download black-forest-labs/FLUX.1-dev
+
+   # Download MusicGen model
+   huggingface-cli download facebook/musicgen-medium
    ```
 
-   Note: Each model is approximately 24GB in size. The download includes:
-   - Model weights (flux1-{model}.safetensors)
-   - Autoencoder (ae.safetensors)
-   - Text encoders and tokenizers
+   Note: Required disk space:
+   - Each image model is approximately 24GB
+   - MusicGen model is approximately 3.5GB
+   
+   Downloads include:
+   - Model weights
+   - Encoders and tokenizers
+   - Additional components specific to each model
 
 3. Using the command-line interface:
    ```bash
