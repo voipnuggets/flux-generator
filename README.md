@@ -1,18 +1,29 @@
-# Flux Generator: macOS MLX-Powered Image Generation with Open WebUI compatable API
+# Flux Generator: macOS MLX-Powered Image & Music Generation with Open WebUI compatable API for Image generation
 
 ## Features
 
 - Text-to-image generation
-- Multiple model options (black-forest-labs Flux schnell/dev, stabilityai sdxl-turbo/stable-diffusion-2-1)
+- Text-to-music generation (NEW!)
+- Multiple model options:
+  - Image Generation:
+    - black-forest-labs Flux schnell/dev
+    - stabilityai sdxl-turbo/stable-diffusion-2-1
+  - Music Generation:
+    - facebook/musicgen-medium
 - Customizable image size and generation parameters
+- Advanced music generation controls
 - Memory usage reporting
-- API compatibility for third-party UIs like Open WebUI
+- API compatibility for Image generation for third-party UIs like Open WebUI
 - Unified server for both UI and API
 - Configurable network access modes
 
 ## Optimized for Apple Silicon with MLX
 
-This repository utilizes the MLX framework, designed specifically for Apple Silicon, to provide optimized performance for Black Forest Flux and Stable Diffusion image generation. MLX leverages the unified memory architecture of Apple's M-series chips, enabling faster and more efficient computations.
+This repository utilizes the MLX framework, designed specifically for Apple Silicon, to provide optimized performance for:
+- Black Forest Flux and Stable Diffusion image generation
+- Facebook's MusicGen audio generation
+
+MLX leverages the unified memory architecture of Apple's M-series chips, enabling faster and more efficient computations.
 
 ### Why MLX?
 
@@ -45,6 +56,7 @@ Parameters:
 - macOS with Apple Silicon (M1/M2/M3)
 - Python 3.10+ (tested with python3.11)
 - MLX framework
+- Additional audio processing libraries for MusicGen
 
 ## Installation & Usage
 
@@ -162,11 +174,30 @@ python3.11 txt2image.py --model schnell \
 Once the server is running (either via `run_flux.sh` or manually):
 
 1. Open your browser and navigate to http://127.0.0.1:7860
-2. Enter a prompt, select a model and click the generate button
-3. On first use, the model will be downloaded (approximately 30 GB)
+2. Choose your desired generation mode:
+   - 🖼️ Image Generation: Enter a prompt, select a model and click generate
+   - 🎵 Music Generation: Enter a music description and adjust parameters
+3. On first use, models will be downloaded:
+   - Image models: approximately 30 GB
+   - MusicGen model: approximately 3.5 GB
 4. Download progress will be visible in the terminal
-5. Once downloaded, image generation will begin
+5. Once downloaded, generation will begin
 
+### Image Generation Parameters
+
+- Model: schnell
+- Size: 512x512
+- Steps: 2
+- CFG Scale: 4.0
+
+### Music Generation Parameters
+
+The music generation interface provides several parameters to control the output:
+
+- **Max Steps**: Controls the length of the generated audio (50-500)
+- **Temperature**: Controls randomness in generation (0.1-2.0)
+- **Top K**: Controls diversity of the output (50-500)
+- **Guidance Scale**: Controls how closely to follow the prompt (1.0-10.0)
 
 ## API Integration
 
@@ -303,7 +334,7 @@ if result["images"]:
 The Flux server requires model files to be downloaded before use. You can download the models in several ways:
 
 1. Automatic download on first use:
-   - Models will be downloaded automatically when you first try to generate an image
+   - Models will be downloaded automatically when you first try to generate
    - The download progress will be visible in the CLI/terminal
    - This may cause a delay on your first generation
 
@@ -327,8 +358,12 @@ The Flux server requires model files to be downloaded before use. You can downlo
 
    # Download Dev model (optional)
    huggingface-cli download black-forest-labs/FLUX.1-dev
+
+   # Download MusicGen model
+   huggingface-cli download facebook/musicgen-medium
    ```
 
+3. Using the command-line interface:
    Note: Each Flux model is approximately 24GB in size, the SD models are bigger. The download includes:
    - Model weights (flux1-{model}.safetensors)
    - Autoencoder (ae.safetensors)
@@ -340,6 +375,7 @@ The Flux server requires model files to be downloaded before use. You can downlo
    huggingface-cli download black-forest-labs/FLUX.1-dev (needs to ask for access, follow the onscreen instructions when you run this command)
    huggingface-cli download stabilityai/stable-diffusion-2-1-base
    huggingface-cli download stabilityai/sdxl-turbo
+   huggingface-cli download facebook/musicgen-medium
    ```
 
 Model Repos:
@@ -347,6 +383,7 @@ https://huggingface.co/black-forest-labs/FLUX.1-schnell
 https://huggingface.co/black-forest-labs/FLUX.1-dev
 https://huggingface.co/stabilityai/stable-diffusion-2-1-base
 https://huggingface.co/stabilityai/sdxl-turbo
+https://huggingface.co/facebook/musicgen-medium
 
 Model files are stored in the HuggingFace cache directory (`~/.cache/huggingface/hub/`).
 
@@ -376,68 +413,3 @@ If you find this project helpful, consider supporting my work:
 <img src="bmc_qr.png" alt="Buy Me A Coffee QR Code" width="200" height="200">
 
 [☕ Buy Me a Coffee](https://buymeacoffee.com/akashg)
-
-## Testing
-
-The project includes several test suites to ensure everything works correctly:
-
-### Shell Script Tests
-
-To test the `run_flux.sh` script:
-```bash
-# Make the test script executable
-chmod +x test/test_run_script.sh
-
-# Run the tests
-./test/test_run_script.sh
-```
-
-These tests verify:
-- Command-line argument handling
-- System requirement checks
-- Virtual environment management
-- Memory reporting
-- Model file checking
-- Network access modes
-
-### Python Tests
-
-To run the Python tests:
-```bash
-# Install test requirements
-pip install -r test/requirements-test.txt
-
-# Run all tests with coverage report
-python3.11 test/run_tests.py
-```
-
-The Python tests cover:
-- API endpoints and functionality
-- UI components and handlers
-- Model generation
-- Docker integration
-- Network connectivity
-
-### Integration Tests
-
-For testing Docker integration:
-```bash
-# Test connectivity between Flux and Open WebUI
-python3.11 test/test_connectivity.py
-```
-
-This verifies:
-- API accessibility
-- Docker network configuration
-- Model availability
-- Generation capabilities
-
-### Test Coverage
-
-The test suite provides coverage reports for:
-- Python code (via pytest-cov)
-- API endpoints
-- UI components
-- Shell scripts
-
-Coverage reports are generated in the `coverage_report` directory.

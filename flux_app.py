@@ -13,16 +13,20 @@ import webbrowser
 from flux import FluxPipeline
 from flux.utils import configs, hf_hub_download
 import os
+from musicgen.musicgen import MusicGen
+from musicgen.utils import save_audio
+import tempfile
+import time
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+import json
 
 # Add stable diffusion directory to Python path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(SCRIPT_DIR, "stable_diffusion"))
 
 from stable_diffusion import StableDiffusion, StableDiffusionXL
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-import json
 
 # Create FastAPI app
 app = FastAPI()
@@ -357,37 +361,22 @@ def find_available_port(host: str, start_port: int, max_attempts: int = 10) -> i
             return port
     raise RuntimeError(f"Could not find an available port in range {start_port}-{start_port + max_attempts - 1}")
 
-def create_ui():
-    """Create the Gradio UI interface"""
-    with gr.Blocks(title="Flux Generator") as demo:
+def create_musicgen_ui():
+    """Create the MusicGen UI interface"""
+    with gr.Column():
         gr.Markdown(
             """
-            # 🌊 Flux Generator
-            Generate beautiful images using Apple Silicon optimized models.
+            # 🎵 MusicGen
+            Generate music using Apple Silicon optimized models.
             """
         )
 
         with gr.Row():
             with gr.Column(scale=4):
-                prompt = gr.Textbox(
+                text_prompt = gr.Textbox(
                     label="Prompt",
-                    placeholder="Enter your prompt here...",
+                    placeholder="Enter your music description here...",
                     lines=3,
-                    interactive=True
-                )
-                
-                # Model Selection - Changed from Radio to Dropdown
-                gr.Markdown("### 🎨 Model Selection")
-                model_choices = [
-                    "Flux Schnell (Fast, 2 steps)",
-                    "Flux Dev (High Quality, 50 steps)",
-                    "SD 2.1 Base (High Quality)",
-                    "SDXL Turbo (Fast)"
-                ]
-                model = gr.Dropdown(
-                    choices=model_choices,
-                    value="Flux Schnell (Fast, 2 steps)",
-                    label="Select Model",
                     interactive=True
                 )
                 
@@ -396,60 +385,221 @@ def create_ui():
                     gr.Markdown("#### ⚙️ Generation Parameters")
                     with gr.Row():
                         with gr.Column(scale=1):
-                            num_steps = gr.Slider(
-                                minimum=1,
-                                maximum=100,
-                                step=1,
-                                value=2,
-                                label="Steps"
+                            max_steps = gr.Slider(
+                                minimum=50,
+                                maximum=500,
+                                step=50,
+                                value=200,
+                                label="Max Steps"
                             )
-                            guidance_scale = gr.Slider(
-                                minimum=0.0,
-                                maximum=20.0,
-                                step=0.5,
-                                value=4.0,
-                                label="Guidance Scale"
+                            temperature = gr.Slider(
+                                minimum=0.1,
+                                maximum=2.0,
+                                step=0.1,
+                                value=1.0,
+                                label="Temperature"
                             )
                         with gr.Column(scale=1):
-                            with gr.Row():
-                                width = gr.Slider(
-                                    minimum=256,
-                                    maximum=1024,
-                                    step=64,
-                                    value=512,
-                                    label="Width"
-                                )
-                                height = gr.Slider(
-                                    minimum=256,
-                                    maximum=1024,
-                                    step=64,
-                                    value=512,
-                                    label="Height"
-                                )
-                            seed = gr.Number(
-                                value=-1,
-                                label="Seed (-1 for random)",
-                                precision=0
+                            top_k = gr.Slider(
+                                minimum=50,
+                                maximum=500,
+                                step=50,
+                                value=250,
+                                label="Top K"
+                            )
+                            guidance = gr.Slider(
+                                minimum=1.0,
+                                maximum=10.0,
+                                step=0.5,
+                                value=3.0,
+                                label="Guidance Scale"
                             )
                 
-                generate = gr.Button("Generate", variant="primary")
+                generate_btn = gr.Button("Generate Music", variant="primary")
 
             with gr.Column(scale=6):
-                result = gr.Image(label="Generated Image", interactive=False)
-                image_info = gr.Markdown(visible=True, value="*Click 'Generate' to create a new image*")
+                audio_output = gr.Audio(label="Generated Audio", interactive=False)
+                generation_info = gr.Markdown(visible=True, value="*Click 'Generate' to create music*")
 
                 # Add Stats Box
                 with gr.Group(visible=True) as stats_group:
                     gr.Markdown("### 🔍 Generation Stats")
                     with gr.Row():
                         with gr.Column(scale=1):
-                            text_mem = gr.Markdown("**Text Encoding Memory:** N/A")
                             gen_mem = gr.Markdown("**Generation Memory:** N/A")
                             total_mem = gr.Markdown("**Total Peak Memory:** N/A")
                         with gr.Column(scale=1):
-                            text_time = gr.Markdown("**Text Encoding Time:** N/A")
                             gen_time = gr.Markdown("**Generation Time:** N/A")
                             total_time = gr.Markdown("**Total Time:** N/A")
+
+        def generate_music(prompt, max_steps, top_k, temperature, guidance):
+            try:
+                # Reset peak memory tracking
+                mx.metal.reset_peak_memory()
+                
+                # Track timing
+                start_total = time.time()
+                
+                # Initialize model
+                model = MusicGen.from_pretrained("facebook/musicgen-medium")
+                
+                # Generate audio
+                start_gen = time.time()
+                audio = model.generate(
+                    text=prompt,
+                    max_steps=max_steps,
+                    top_k=top_k,
+                    temp=temperature,
+                    guidance_coef=guidance
+                )
+                
+                gen_mem = mx.metal.get_peak_memory() / 1024**3
+                gen_time = time.time() - start_gen
+                total_time = time.time() - start_total
+                
+                # Save audio to temporary file
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+                    save_audio(temp_file.name, audio, model.sampling_rate)
+                
+                return [
+                    temp_file.name,  # Audio output (just the path)
+                    f"Generated music from prompt: {prompt}",  # Info
+                    f"**Generation Memory:** {gen_mem:.2f}GB",  # gen_mem
+                    f"**Total Peak Memory:** {gen_mem:.2f}GB",  # total_mem
+                    f"**Generation Time:** {gen_time:.2f}s",  # gen_time
+                    f"**Total Time:** {total_time:.2f}s"  # total_time
+                ]
+            except Exception as e:
+                error_msg = f"❌ Error: {str(e)}"
+                return [
+                    None,  # Audio output
+                    error_msg,  # Info
+                    "**Generation Memory:** N/A",  # gen_mem
+                    "**Total Peak Memory:** N/A",  # total_mem
+                    "**Generation Time:** N/A",  # gen_time
+                    "**Total Time:** N/A"  # total_time
+                ]
+
+        # Wire up the generate button
+        generate_btn.click(
+            fn=generate_music,
+            inputs=[
+                text_prompt,
+                max_steps,
+                top_k,
+                temperature,
+                guidance
+            ],
+            outputs=[
+                audio_output,
+                generation_info,
+                gen_mem,
+                total_mem,
+                gen_time,
+                total_time
+            ]
+        )
+
+    return gr.Column()
+
+def create_ui():
+    """Create the Gradio UI interface"""
+    with gr.Blocks(title="Flux Generator") as demo:
+        with gr.Tabs():
+            with gr.Tab("🖼️ Image Generation"):
+                gr.Markdown(
+                    """
+                    # 🌊 Flux Generator
+                    Generate beautiful images using Apple Silicon optimized models.
+                    """
+                )
+                
+                with gr.Row():
+                    with gr.Column(scale=4):
+                        prompt = gr.Textbox(
+                            label="Prompt",
+                            placeholder="Enter your prompt here...",
+                            lines=3,
+                            interactive=True
+                        )
+                        
+                        # Model Selection - Changed from Radio to Dropdown
+                        gr.Markdown("### 🎨 Model Selection")
+                        model_choices = [
+                            "Flux Schnell (Fast, 2 steps)",
+                            "Flux Dev (High Quality, 50 steps)",
+                            "SD 2.1 Base (High Quality)",
+                            "SDXL Turbo (Fast)"
+                        ]
+                        model = gr.Dropdown(
+                            choices=model_choices,
+                            value="Flux Schnell (Fast, 2 steps)",
+                            label="Select Model",
+                            interactive=True
+                        )
+                        
+                        # Generation Parameters
+                        with gr.Group():
+                            gr.Markdown("#### ⚙️ Generation Parameters")
+                            with gr.Row():
+                                with gr.Column(scale=1):
+                                    num_steps = gr.Slider(
+                                        minimum=1,
+                                        maximum=100,
+                                        step=1,
+                                        value=2,
+                                        label="Steps"
+                                    )
+                                    guidance_scale = gr.Slider(
+                                        minimum=0.0,
+                                        maximum=20.0,
+                                        step=0.5,
+                                        value=4.0,
+                                        label="Guidance Scale"
+                                    )
+                                with gr.Column(scale=1):
+                                    with gr.Row():
+                                        width = gr.Slider(
+                                            minimum=256,
+                                            maximum=1024,
+                                            step=64,
+                                            value=512,
+                                            label="Width"
+                                        )
+                                        height = gr.Slider(
+                                            minimum=256,
+                                            maximum=1024,
+                                            step=64,
+                                            value=512,
+                                            label="Height"
+                                        )
+                                    seed = gr.Number(
+                                        value=-1,
+                                        label="Seed (-1 for random)",
+                                        precision=0
+                                    )
+                        
+                        generate = gr.Button("Generate", variant="primary")
+
+                    with gr.Column(scale=6):
+                        result = gr.Image(label="Generated Image", interactive=False)
+                        image_info = gr.Markdown(visible=True, value="*Click 'Generate' to create a new image*")
+
+                        # Add Stats Box
+                        with gr.Group(visible=True) as stats_group:
+                            gr.Markdown("### 🔍 Generation Stats")
+                            with gr.Row():
+                                with gr.Column(scale=1):
+                                    text_mem = gr.Markdown("**Text Encoding Memory:** N/A")
+                                    gen_mem = gr.Markdown("**Generation Memory:** N/A")
+                                    total_mem = gr.Markdown("**Total Peak Memory:** N/A")
+                                with gr.Column(scale=1):
+                                    text_time = gr.Markdown("**Text Encoding Time:** N/A")
+                                    gen_time = gr.Markdown("**Generation Time:** N/A")
+                                    total_time = gr.Markdown("**Total Time:** N/A")
+
+            with gr.Tab("🎵 Music Generation"):
+                create_musicgen_ui()
 
         def update_model_params(model_choice):
             """Update parameters based on selected model"""
@@ -478,7 +628,6 @@ def create_ui():
                 mx.metal.reset_peak_memory()
 
                 # Track timing
-                import time
                 start_total = time.time()
 
                 # Initialize pipeline
