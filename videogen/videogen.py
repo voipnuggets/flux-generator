@@ -13,7 +13,7 @@ from tqdm import tqdm
 import logging
 
 from .utils import save_video
-from ..musicgen.t5 import T5ForTextEncoding
+from musicgen.t5 import T5
 
 class VideoGenError(Exception):
     """Base exception for VideoGen errors."""
@@ -85,10 +85,9 @@ class VideoGen(nn.Module):
     
     def _init_text_encoder(self):
         """Initialize the T5 text encoder."""
-        return T5ForTextEncoding(
-            model_name=self.config["text_encoder"]["model_name"],
-            max_length=self.config["text_encoder"]["max_length"]
-        )
+        model, tokenizer = T5.from_pretrained(self.config["text_encoder"]["model_name"])
+        self.tokenizer = tokenizer
+        return model
     
     def _init_decoder(self):
         """Initialize the UNet decoder."""
@@ -136,9 +135,9 @@ class VideoGen(nn.Module):
                 raise ValueError("guidance_scale must be >= 1.0")
             
             # Encode text prompt
-            text_embeds = self.text_encoder(prompt)
+            text_embeds = self.text_encoder.encode(self.tokenizer.encode(prompt))
             if negative_prompt is not None:
-                neg_embeds = self.text_encoder(negative_prompt)
+                neg_embeds = self.text_encoder.encode(self.tokenizer.encode(negative_prompt))
             else:
                 neg_embeds = mx.zeros_like(text_embeds)
             

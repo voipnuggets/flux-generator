@@ -211,7 +211,7 @@ Once the server is running (either via `run_flux.sh` or manually):
 3. On first use, models will be downloaded:
    - Image models: approximately 30 GB
    - MusicGen model: approximately 3.5 GB
-   - Video model: approximately 1.3 GB
+   - Video model: approximately 5.68 GB
 4. Download progress will be visible in the terminal
 5. Once downloaded, generation will begin
 
@@ -243,7 +243,7 @@ The video generation interface provides several parameters to control the output
 
 ## API Integration
 
-The application provides an API that can be used with third-party UIs like Open WebUI.
+The application provides an image generation API that can be used with third-party UIs like Open WebUI.
 Check this tutorial for Open WebUI integration instructions:
 [Tutorial](https://voipnuggets.com/2025/02/18/flux-generator-local-image-generation-on-apple-silicon-with-open-webui-integration-using-flux-llm/
 )
