@@ -1,17 +1,21 @@
-# Flux Generator: macOS MLX-Powered Image & Music Generation with Open WebUI compatable API for Image generation
+# Flux Generator: macOS MLX-Powered Image, Music & Video Generation with Open WebUI compatable API for Image generation
 
 ## Features
 
 - Text-to-image generation
-- Text-to-music generation (NEW!)
+- Text-to-music generation
+- Text-to-video generation (NEW!)
 - Multiple model options:
   - Image Generation:
     - black-forest-labs Flux schnell/dev
     - stabilityai sdxl-turbo/stable-diffusion-2-1
   - Music Generation:
     - facebook/musicgen-medium
+  - Video Generation:
+    - Wan-AI/Wan2.1-T2V-1.3B
 - Customizable image size and generation parameters
 - Advanced music generation controls
+- Video generation with adjustable frames, resolution, and parameters
 - Memory usage reporting
 - API compatibility for Image generation for third-party UIs like Open WebUI
 - Unified server for both UI and API
@@ -22,26 +26,37 @@
 This repository utilizes the MLX framework, designed specifically for Apple Silicon, to provide optimized performance for:
 - Black Forest Flux and Stable Diffusion image generation
 - Facebook's MusicGen audio generation
+- Wan-AI's text-to-video generation
 
 MLX leverages the unified memory architecture of Apple's M-series chips, enabling faster and more efficient computations.
 
 ### Why MLX?
 
 * **Performance:** Experience significant speed improvements compared to other frameworks on Apple Silicon.
-* **Local Execution:** Run Stable Diffusion models locally on your Mac, ensuring data privacy and enabling offline use.
+* **Local Execution:** Run models locally on your Mac, ensuring data privacy and enabling offline use.
 * **Fine-Tuning:** MLX provides a great environment for fine-tuning models on apple silicon.
+* **Memory Efficiency:** Optimized memory management for large models and video generation.
 
 For more examples of what MLX can do, check out the official mlx-examples repository: [https://github.com/ml-explore/mlx-examples](https://github.com/ml-explore/mlx-examples)
 
-This repository is designed to give apple silicon users a fast and easy way to generate images locally.
+This repository is designed to give apple silicon users a fast and easy way to generate content locally.
 
 ## UI Screenshots:
 ![Flux image generation Tab in UI](flux_app_ui_imagegen.jpg)
 ![Flux music generation Tab in UI](flux_app_ui_musicgen.jpg)
+![Flux video generation Tab in UI](flux_app_ui_videogen.jpg)
 
+## System Requirements
 
-## Example Generation
+- macOS with Apple Silicon (M1/M2/M3)
+- Python 3.10+ (tested with python3.11)
+- MLX framework
+- 32GB RAM recommended (especially for video generation)
+- Additional libraries for audio and video processing
 
+## Example Generations
+
+### Image Generation
 Here's an example image generated using the Flux model:
 
 ![Moonset over ocean](generated_moonset.png)
@@ -52,6 +67,19 @@ Parameters:
 - Size: 512x512
 - Steps: 2
 - CFG Scale: 4.0
+
+### Video Generation
+Parameters for optimal video generation:
+- Number of frames: 16-32
+- Resolution: 256x256 to 512x512
+- Steps: 50 (recommended)
+- Guidance Scale: 7.5 (adjustable)
+- FPS: 8 (default)
+
+Example prompts for video generation:
+- "A blooming flower timelapse, highly detailed"
+- "Waves crashing on a beach at sunset"
+- "Space journey through colorful nebulas"
 
 ## Requirements
 
@@ -179,9 +207,11 @@ Once the server is running (either via `run_flux.sh` or manually):
 2. Choose your desired generation mode:
    - 🖼️ Image Generation: Enter a prompt, select a model and click generate
    - 🎵 Music Generation: Enter a music description and adjust parameters
+   - 🎥 Video Generation: Enter a video description and adjust parameters
 3. On first use, models will be downloaded:
    - Image models: approximately 30 GB
    - MusicGen model: approximately 3.5 GB
+   - Video model: approximately 1.3 GB
 4. Download progress will be visible in the terminal
 5. Once downloaded, generation will begin
 
@@ -200,6 +230,16 @@ The music generation interface provides several parameters to control the output
 - **Temperature**: Controls randomness in generation (0.1-2.0)
 - **Top K**: Controls diversity of the output (50-500)
 - **Guidance Scale**: Controls how closely to follow the prompt (1.0-10.0)
+
+### Video Generation Parameters
+
+The video generation interface provides several parameters to control the output:
+
+- **Number of frames**: Controls the length of the generated video (16-32)
+- **Resolution**: Controls the resolution of the generated video (256x256 to 512x512)
+- **Steps**: Controls the number of steps for video generation (50 recommended)
+- **Guidance Scale**: Controls how closely to follow the prompt (7.5 adjustable)
+- **FPS**: Controls the frames per second of the generated video (8 default)
 
 ## API Integration
 
@@ -345,13 +385,17 @@ The Flux server requires model files to be downloaded before use. You can downlo
 
    # Download MusicGen model
    huggingface-cli download facebook/musicgen-medium
+
+   # Download Video Generation model
+   huggingface-cli download Wan-AI/Wan2.1-T2V-1.3B
    ```
 
 3. Using the command-line interface:
-   Note: Each Flux model is approximately 24GB in size, the SD models are bigger. The download includes:
-   - Model weights (flux1-{model}.safetensors)
-   - Autoencoder (ae.safetensors)
-   - Text encoders and tokenizers
+   Note: Model sizes:
+   - Each Flux model: ~24GB
+   - MusicGen model: ~3.5GB
+   - Video model: ~1.3GB
+   - SD models vary in size
    
    # Download command for all models
    ```bash
@@ -360,6 +404,7 @@ The Flux server requires model files to be downloaded before use. You can downlo
    huggingface-cli download stabilityai/stable-diffusion-2-1-base
    huggingface-cli download stabilityai/sdxl-turbo
    huggingface-cli download facebook/musicgen-medium
+   huggingface-cli download Wan-AI/Wan2.1-T2V-1.3B
    ```
 
 Model Repos:
@@ -368,6 +413,7 @@ https://huggingface.co/black-forest-labs/FLUX.1-dev
 https://huggingface.co/stabilityai/stable-diffusion-2-1-base
 https://huggingface.co/stabilityai/sdxl-turbo
 https://huggingface.co/facebook/musicgen-medium
+https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B
 
 Model files are stored in the HuggingFace cache directory (`~/.cache/huggingface/hub/`).
 

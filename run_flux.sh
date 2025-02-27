@@ -99,6 +99,14 @@ check_system() {
         return 1
     fi
     
+    # Check minimum memory requirements (32GB recommended for video generation)
+    total_mem_gb=$(sysctl -n hw.memsize | awk '{printf "%.0f", $0/1024/1024/1024}')
+    if [ "$total_mem_gb" -lt 32 ]; then
+        printf "${YELLOW}Warning: 32GB RAM recommended for optimal performance${NC}\n"
+        printf "Your system has ${total_mem_gb}GB RAM\n"
+        printf "Video generation may be slower or fail with limited memory\n"
+    fi
+    
     printf "${GREEN}System requirements met!${NC}\n"
     printf "\n%s\n" "${delimiter}"
     return 0
@@ -183,12 +191,25 @@ check_models() {
         printf "  Run: huggingface-cli download facebook/musicgen-medium\n"
     fi
 
-    if [ ! -d "$SD_BASE_DIR" ] || [ ! -d "$SDXL_DIR" ] || [ ! -d "$MUSICGEN_DIR" ]; then
+    # Check Video Generation models
+    VIDEO_MODEL_DIR="$HOME/.cache/huggingface/hub/models--Wan-AI--Wan2.1-T2V-1.3B"
+    printf "\nVideo Generation Models:\n"
+    
+    if [ -d "$VIDEO_MODEL_DIR" ]; then
+        SIZE=$(du -sh "$VIDEO_MODEL_DIR" | cut -f1)
+        printf "${GREEN}✓ Found Wan2.1-T2V model (${SIZE})${NC}\n"
+    else
+        printf "${YELLOW}✗ Wan2.1-T2V model not found${NC}\n"
+        printf "  Run: huggingface-cli download Wan-AI/Wan2.1-T2V-1.3B\n"
+    fi
+
+    if [ ! -d "$SD_BASE_DIR" ] || [ ! -d "$SDXL_DIR" ] || [ ! -d "$MUSICGEN_DIR" ] || [ ! -d "$VIDEO_MODEL_DIR" ]; then
         printf "\n${YELLOW}Note: To download missing models:${NC}\n"
         printf "1. Accept model licenses at:\n"
         printf "   - https://huggingface.co/stabilityai/stable-diffusion-2-1-base\n"
         printf "   - https://huggingface.co/stabilityai/sdxl-turbo\n"
         printf "   - https://huggingface.co/facebook/musicgen-medium\n"
+        printf "   - https://huggingface.co/Wan-AI/Wan2.1-T2V-1.3B\n"
         printf "2. Run the huggingface-cli commands shown above\n"
     fi
 
