@@ -11,6 +11,7 @@ import torch
 from huggingface_hub import hf_hub_download
 from tqdm import tqdm
 import logging
+import math
 
 from .utils import save_video
 from musicgen.t5 import T5
@@ -63,6 +64,10 @@ class VideoGen(nn.Module):
                 force_download=False
             )
             self.vae = torch.load(vae_path, map_location="cpu")
+            
+            # Set VAE configuration from Wan2.1
+            self.vae_stride = (4, 8, 8)  # (temporal, height, width) stride
+            self.patch_size = (4, 16, 16)  # (temporal, height, width) patch size
             
         except Exception as e:
             raise ModelLoadError(f"Failed to load model: {str(e)}") from e
@@ -134,7 +139,7 @@ class VideoGen(nn.Module):
         seed: Optional[int] = None,
         sample_solver: str = "unipc",
     ) -> List[mx.array]:
-        """Generate a video from text prompt."""
+        """Generate a video from text prompt following Wan2.1 implementation."""
         try:
             if seed is not None:
                 mx.random.seed(seed)
@@ -182,10 +187,25 @@ class VideoGen(nn.Module):
             else:
                 neg_embeds = mx.zeros_like(text_embeds)
             
-            # Initialize latents
-            latents = mx.random.normal(
-                (1, 4, num_frames, height//8, width//8)
+            # Calculate latent dimensions based on VAE stride
+            lat_t = (num_frames - 1) // self.vae_stride[0] + 1  # Temporal dimension
+            lat_h = height // self.vae_stride[1]  # Height
+            lat_w = width // self.vae_stride[2]  # Width
+            
+            # Calculate sequence length based on patch size
+            seq_len = math.ceil(
+                (lat_h * lat_w) / (self.patch_size[1] * self.patch_size[2]) * 
+                lat_t
             )
+            logging.info(f"Calculated sequence length: {seq_len}")
+            
+            # Initialize latents following Wan2.1 format
+            # Shape: [channels, temporal, height, width]
+            latents = mx.random.normal(
+                (4, lat_t, lat_h, lat_w),
+                dtype=mx.float32
+            )
+            
             logging.info(f"Initialized latents with shape: {latents.shape}")
             
             # Setup diffusion
@@ -203,7 +223,6 @@ class VideoGen(nn.Module):
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
                 
                 # Prepare time embedding - Wan2.1 expects a specific time embedding format
-                # First convert timestep to embedding array
                 t_emb = mx.array([t], dtype=mx.float32)
                 
                 # Create sinusoidal time embedding of dimension 320 (matching Wan2.1 model)
@@ -244,15 +263,34 @@ class VideoGen(nn.Module):
             logging.info("Denoising complete, decoding latents to pixel space...")
             
             try:
-                # Decode latents to pixel space
-                video = self.decoder.decode(latents)
+                # Scale latents (1 / 0.18215 is the scaling factor used in Stable Diffusion)
+                latents = 1 / 0.18215 * latents
+                
+                # Convert MLX array to PyTorch tensor for VAE
+                latents_np = latents.numpy()
+                import torch
+                latents_torch = torch.from_numpy(latents_np).to(torch.float32)
+                
+                # Reshape for VAE if needed
+                if len(latents_torch.shape) == 4:  # [C, T, H, W]
+                    C, T, H, W = latents_torch.shape
+                    # Reshape to [B*T, C, H, W] for VAE processing
+                    latents_torch = latents_torch.permute(1, 0, 2, 3)  # [T, C, H, W]
+                    latents_torch = latents_torch.reshape(T, C, H, W)   # [T, C, H, W]
+                
+                # Decode through VAE
+                with torch.no_grad():
+                    video = self.vae.decode(latents_torch).sample
+                
+                # Convert back to MLX array
+                video = mx.array(video.numpy())
                 
                 # Denormalize and convert to uint8
                 video = ((video + 1) * 127.5).clip(0, 255).astype(mx.uint8)
                 logging.info(f"Final video shape: {video.shape}")
                 
                 # Return individual frames
-                frames = [video[0, i] for i in range(num_frames)]
+                frames = [video[i] for i in range(video.shape[0])]
                 logging.info(f"Generated {len(frames)} frames successfully")
                 
                 return frames
@@ -266,8 +304,35 @@ class VideoGen(nn.Module):
             raise GenerationError(f"Video generation failed: {str(e)}") from e
 
 
+class CustomConv3D(nn.Module):
+    """Custom 3D Convolution layer with proper weight initialization."""
+    
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int = 3, stride: int = 1, padding: int = 1):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = (stride, stride, stride)
+        self.padding = (padding, padding, padding)
+        self.dilation = (1, 1, 1)
+        
+        # Initialize weights with Xavier/Glorot initialization
+        weight_shape = (out_channels, in_channels, kernel_size, kernel_size, kernel_size)
+        scale = 1.0 / (in_channels * kernel_size * kernel_size * kernel_size) ** 0.5
+        self.weight = mx.random.normal(weight_shape, scale=scale)
+        self.bias = mx.zeros((out_channels,))
+        
+        logging.info(f"Initialized CustomConv3D with weight shape: {self.weight.shape}")
+    
+    def __call__(self, x):
+        # Apply 3D convolution
+        y = mx.conv3d(x, self.weight, self.stride, self.padding, self.dilation)
+        # Add bias
+        return y + self.bias.reshape(-1, 1, 1, 1)
+
+
 class UNetDecoder(nn.Module):
-    """U-Net based video decoder."""
+    """U-Net based video decoder following Wan2.1 architecture."""
     
     def __init__(
         self,
@@ -278,8 +343,23 @@ class UNetDecoder(nn.Module):
         num_attention_heads: int = 8,
     ):
         super().__init__()
-        # Initialize first convolution with proper channel ordering
-        self.conv_in = nn.Conv3d(in_channels, block_out_channels[0], kernel_size=3, padding=1)
+        logging.info(f"Initializing UNetDecoder with in_channels={in_channels}, out_channels={out_channels}")
+        
+        # Initialize first convolution with correct weight format from Wan2.1
+        self.conv_in = nn.Conv3d(
+            in_channels=in_channels,
+            out_channels=block_out_channels[0],
+            kernel_size=3,
+            padding=1
+        )
+        
+        # Initialize weight with correct shape (out_channels, in_channels, depth, height, width)
+        weight_shape = (block_out_channels[0], in_channels, 3, 3, 3)
+        scale = 1.0 / (in_channels * 3 * 3 * 3) ** 0.5  # Xavier/Glorot initialization
+        self.conv_in.weight = mx.random.normal(weight_shape, scale=scale)
+        self.conv_in.bias = mx.zeros((block_out_channels[0],))
+        
+        logging.info(f"Initialized conv_in with weight shape: {self.conv_in.weight.shape}")
         
         # Down blocks
         self.down_blocks = nn.Module()
@@ -293,7 +373,7 @@ class UNetDecoder(nn.Module):
                     out_channels=out_channel,
                     num_attention_heads=num_attention_heads if i > 0 else 0
                 )
-                # Use exact naming pattern: down_blocks.down_blocks.{idx}
+                # Use exact naming pattern from Wan2.1: down_blocks.down_blocks.{idx}
                 setattr(self.down_blocks, f"down_blocks.{block_idx}", block)
                 block_idx += 1
                 in_channel = out_channel
@@ -340,11 +420,17 @@ class UNetDecoder(nn.Module):
                 block_idx += 1
                 in_channel = reversed_block_out_channels[i + 1]
         
+        # Final convolution with correct weight format
         self.conv_out = nn.Conv3d(block_out_channels[0], out_channels, kernel_size=3, padding=1)
-        self.vae = None  # Will be set after initialization
+        weight_shape = (out_channels, block_out_channels[0], 3, 3, 3)
+        scale = 1.0 / (block_out_channels[0] * 3 * 3 * 3) ** 0.5
+        self.conv_out.weight = mx.random.normal(weight_shape, scale=scale)
+        self.conv_out.bias = mx.zeros((out_channels,))
+        
+        logging.info(f"Initialized conv_out with weight shape: {self.conv_out.weight.shape}")
     
     def custom_load_weights(self, weights):
-        """Load weights with more robust error handling"""
+        """Load weights with robust error handling following Wan2.1 format"""
         successful = 0
         failed = 0
         
@@ -369,37 +455,79 @@ class UNetDecoder(nn.Module):
                     current_param = getattr(target, final_attr)
                     
                     # Handle convolution weight transposition
-                    if final_attr == "weight" and hasattr(target, "__class__") and "Conv" in target.__class__.__name__:
+                    if final_attr == "weight" and isinstance(target, nn.Conv3d):
                         # Check if weight dimensions need to be transposed
                         if current_param.shape != weight.shape:
-                            logging.info(f"Transposing weight for {key}: from {weight.shape} to {current_param.shape}")
-                            # If it's a Conv3D weight that needs transposition (5D tensor)
+                            logging.info(f"Processing Conv3D weight for {key}")
+                            logging.info(f"Target shape: {current_param.shape}, Weight shape: {weight.shape}")
+                            
+                            # For Conv3D weights, ensure shape is (out_channels, in_channels, kt, kh, kw)
                             if len(weight.shape) == 5:
-                                # Transpose from [out_c, k_t, k_h, k_w, in_c] to [out_c, in_c, k_t, k_h, k_w]
-                                weight = mx.transpose(weight, (0, 4, 1, 2, 3))
+                                # Try common permutations to match target shape
+                                permutations = [
+                                    (0, 4, 1, 2, 3),  # (out_c, in_c, t, h, w) from (out_c, t, h, w, in_c)
+                                    (0, 1, 2, 3, 4),  # No change
+                                    (4, 0, 1, 2, 3),  # (in_c, out_c, t, h, w) to (out_c, in_c, t, h, w)
+                                    (0, 3, 1, 2, 4),  # Special case for some weight formats
+                                ]
+                                
+                                found = False
+                                for perm in permutations:
+                                    try:
+                                        test_weight = mx.transpose(weight, perm)
+                                        if test_weight.shape == current_param.shape:
+                                            weight = test_weight
+                                            logging.info(f"Found working permutation: {perm}")
+                                            found = True
+                                            break
+                                    except Exception as e:
+                                        continue
+                                
+                                if not found:
+                                    # If no permutation worked, try to reshape the weight tensor
+                                    if weight.shape[-1] == current_param.shape[1]:  # If input channels are last
+                                        # Move input channels to second position
+                                        weight = mx.transpose(weight, (0, 4, 1, 2, 3))
+                                        logging.info("Moved input channels from last to second position")
+                                    elif weight.shape[1] == current_param.shape[0]:  # If output channels are second
+                                        # Move output channels to first position
+                                        weight = mx.transpose(weight, (1, 0, 2, 3, 4))
+                                        logging.info("Moved output channels from second to first position")
+                                    
+                                    if weight.shape != current_param.shape:
+                                        raise ValueError(
+                                            f"Could not find valid permutation for weight shape {weight.shape} "
+                                            f"to match {current_param.shape}"
+                                        )
+                            
+                            logging.info(f"Final weight shape: {weight.shape}")
                     
-                    if isinstance(current_param, mx.array) and current_param.shape == weight.shape:
+                    # Set the parameter
+                    if isinstance(current_param, mx.array):
+                        if current_param.shape == weight.shape:
+                            setattr(target, final_attr, weight)
+                            successful += 1
+                            logging.info(f"Successfully loaded weight {key} with shape {weight.shape}")
+                        else:
+                            logging.error(f"Shape mismatch for {key}: expected {current_param.shape}, got {weight.shape}")
+                            failed += 1
+                    else:
                         setattr(target, final_attr, weight)
                         successful += 1
-                    else:
-                        logging.warning(f"Shape mismatch for {key}: expected {current_param.shape if hasattr(current_param, 'shape') else 'not a tensor'}, got {weight.shape}")
-                        failed += 1
                 else:
                     logging.warning(f"Missing attribute {final_attr} in target module while loading {key}")
                     failed += 1
             except Exception as e:
-                logging.warning(f"Error loading weight {key}: {str(e)}")
+                logging.error(f"Error loading weight {key}: {str(e)}")
                 failed += 1
         
         logging.info(f"Weight loading complete: {successful} succeeded, {failed} failed")
         return successful, failed
     
     def __call__(self, x, t, encoder_hidden_states):
-        # Ensure input has the right channel order for MLX Conv3D ops
+        # Ensure input has the right shape for Conv3D ops
         # Expected input shape: [batch, channels, frames, height, width]
-        # Check if x is already in the right shape
         if len(x.shape) == 5:
-            # Input is already 5D
             b, c, f, h, w = x.shape
             logging.info(f"Input shape to UNetDecoder: {x.shape}")
         
@@ -656,13 +784,14 @@ class ResnetBlock3D(nn.Module):
 
 
 class Downsample3D(nn.Module):
-    """3D downsampling using strided convolution."""
+    """3D downsampling using strided convolution following Wan2.1."""
     
     def __init__(self, channels: int, out_channels: Optional[int] = None):
         super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         
+        # Initialize conv with correct weight format from Wan2.1
         self.conv = nn.Conv3d(
             self.channels,
             self.out_channels,
@@ -670,42 +799,75 @@ class Downsample3D(nn.Module):
             stride=2,
             padding=1
         )
+        
+        # Initialize weights with correct shape and Xavier/Glorot initialization
+        weight_shape = (self.out_channels, self.channels, 3, 3, 3)
+        scale = 1.0 / (self.channels * 3 * 3 * 3) ** 0.5
+        self.conv.weight = mx.random.normal(weight_shape, scale=scale)
+        self.conv.bias = mx.zeros((self.out_channels,))
+        
+        logging.info(f"Initialized Downsample3D conv with weight shape: {self.conv.weight.shape}")
     
     def __call__(self, x, *args, **kwargs):
-        return self.conv(x)
+        # Log input shape for debugging
+        if len(x.shape) == 5:
+            b, c, f, h, w = x.shape
+            logging.info(f"Downsample3D input shape: {x.shape}")
+        
+        # Apply strided convolution
+        x = self.conv(x)
+        logging.info(f"Downsample3D output shape: {x.shape}")
+        return x
 
 
 class Upsample3D(nn.Module):
-    """3D upsampling using interpolation and convolution."""
+    """3D upsampling using interpolation and convolution following Wan2.1."""
     
     def __init__(self, channels: int, out_channels: Optional[int] = None):
         super().__init__()
         self.channels = channels
         self.out_channels = out_channels or channels
         
+        # Initialize conv with correct weight format from Wan2.1
         self.conv = nn.Conv3d(
             self.channels,
             self.out_channels,
             kernel_size=3,
             padding=1
         )
+        
+        # Initialize weights with correct shape and Xavier/Glorot initialization
+        weight_shape = (self.out_channels, self.channels, 3, 3, 3)
+        scale = 1.0 / (self.channels * 3 * 3 * 3) ** 0.5
+        self.conv.weight = mx.random.normal(weight_shape, scale=scale)
+        self.conv.bias = mx.zeros((self.out_channels,))
+        
+        logging.info(f"Initialized Upsample3D conv with weight shape: {self.conv.weight.shape}")
     
     def __call__(self, x, *args, **kwargs):
-        # Interpolate spatially
+        # Log input shape for debugging
+        if len(x.shape) == 5:
+            b, c, f, h, w = x.shape
+            logging.info(f"Upsample3D input shape: {x.shape}")
+        
+        # Interpolate spatially first
         b, c, f, h, w = x.shape
         x = mx.reshape(x, (b * f, c, h, w))
         x = mx.image.resize(x, (h * 2, w * 2), method="nearest")
         x = mx.reshape(x, (b, c, f, h * 2, w * 2))
         
-        # Interpolate temporally
-        x = mx.transpose(x, (0, 1, 3, 4, 2))  # B, C, H, W, F
+        # Then interpolate temporally
+        x = mx.transpose(x, (0, 1, 3, 4, 2))  # [B, C, H, W, F]
         b, c, h, w, f = x.shape
         x = mx.reshape(x, (b * c * h, w, f))
         x = mx.image.resize(x, (w, f * 2), method="nearest")
         x = mx.reshape(x, (b, c, h, w, f * 2))
-        x = mx.transpose(x, (0, 1, 4, 2, 3))  # B, C, F, H, W
+        x = mx.transpose(x, (0, 1, 4, 2, 3))  # [B, C, F, H, W]
         
-        return self.conv(x)
+        # Apply convolution
+        x = self.conv(x)
+        logging.info(f"Upsample3D output shape: {x.shape}")
+        return x
 
 
 class SpatialTransformer(nn.Module):

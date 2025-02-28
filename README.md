@@ -391,11 +391,11 @@ The Flux server requires model files to be downloaded before use. You can downlo
    ```
 
 3. Using the command-line interface:
-   Note: Model sizes:
-   - Each Flux model: ~24GB
-   - MusicGen model: ~3.5GB
-   - Video model: ~1.3GB
-   - SD models vary in size
+   Note: Total Model files sizes:
+   - Each Flux model: ~32GB
+   - Each Stable Diffusion model: ~34GB
+   - MusicGen model: ~11GB
+   - Video model: ~22GB
    
    # Download command for all models
    ```bash
