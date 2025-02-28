@@ -305,7 +305,7 @@ class VideoGen(nn.Module):
 
 
 class CustomConv3D(nn.Module):
-    """Custom 3D Convolution layer with proper weight initialization."""
+    """Custom 3D Convolution layer with proper weight initialization and reshaping."""
     
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int = 3, stride: int = 1, padding: int = 1):
         super().__init__()
@@ -317,18 +317,65 @@ class CustomConv3D(nn.Module):
         self.dilation = (1, 1, 1)
         
         # Initialize weights with Xavier/Glorot initialization
+        # Shape: [out_channels, in_channels, depth, height, width]
         weight_shape = (out_channels, in_channels, kernel_size, kernel_size, kernel_size)
         scale = 1.0 / (in_channels * kernel_size * kernel_size * kernel_size) ** 0.5
         self.weight = mx.random.normal(weight_shape, scale=scale)
         self.bias = mx.zeros((out_channels,))
         
-        logging.info(f"Initialized CustomConv3D with weight shape: {self.weight.shape}")
+        logging.info(f"Initialized CustomConv3D with original weight shape: {self.weight.shape}")
     
     def __call__(self, x):
-        # Apply 3D convolution
-        y = mx.conv3d(x, self.weight, self.stride, self.padding, self.dilation)
+        # Handle both 4D and 5D input tensors
+        input_shape = x.shape
+        logging.info(f"CustomConv3D input shape: {input_shape}")
+        
+        if len(input_shape) == 4:  # [batch, channels, height, width]
+            b, c, h, w = input_shape
+            # Add temporal dimension
+            x = mx.expand_dims(x, axis=2)  # [batch, channels, 1, height, width]
+            f = 1
+        elif len(input_shape) == 5:  # [batch, channels, frames, height, width]
+            b, c, f, h, w = input_shape
+        else:
+            raise ValueError(f"Expected 4D or 5D input tensor, got shape {input_shape}")
+        
+        # Reshape input from [batch, channels, frames, height, width] to [batch * frames, channels, height, width]
+        x_reshaped = mx.reshape(x, (b * f, c, h, w))
+        
+        # Reshape weights from [out_c, in_c, d, h, w] to [out_c, in_c * d, h, w]
+        weight_reshaped = mx.reshape(self.weight, 
+            (self.out_channels, self.in_channels * self.kernel_size, self.kernel_size, self.kernel_size)
+        )
+        
+        logging.info(f"Reshaped input to: {x_reshaped.shape}")
+        logging.info(f"Reshaped weights to: {weight_reshaped.shape}")
+        
+        # Apply 2D convolution
+        y = mx.conv2d(
+            x_reshaped, 
+            weight_reshaped,
+            stride=self.stride[1:],  # Use only spatial strides
+            padding=self.padding[1:],  # Use only spatial padding
+            dilation=self.dilation[1:]  # Use only spatial dilation
+        )
+        
         # Add bias
-        return y + self.bias.reshape(-1, 1, 1, 1)
+        y = y + self.bias.reshape(-1, 1, 1)
+        
+        # Get output spatial dimensions
+        _, _, h_out, w_out = y.shape
+        
+        # Reshape back to 5D
+        y = mx.reshape(y, (b, f, self.out_channels, h_out, w_out))
+        y = mx.transpose(y, (0, 2, 1, 3, 4))  # [b, c, f, h, w]
+        
+        # If input was 4D, remove the temporal dimension
+        if len(input_shape) == 4:
+            y = y.squeeze(axis=2)
+        
+        logging.info(f"CustomConv3D output shape: {y.shape}")
+        return y
 
 
 class UNetDecoder(nn.Module):
@@ -346,20 +393,12 @@ class UNetDecoder(nn.Module):
         logging.info(f"Initializing UNetDecoder with in_channels={in_channels}, out_channels={out_channels}")
         
         # Initialize first convolution with correct weight format from Wan2.1
-        self.conv_in = nn.Conv3d(
+        self.conv_in = CustomConv3D(
             in_channels=in_channels,
             out_channels=block_out_channels[0],
             kernel_size=3,
             padding=1
         )
-        
-        # Initialize weight with correct shape (out_channels, in_channels, depth, height, width)
-        weight_shape = (block_out_channels[0], in_channels, 3, 3, 3)
-        scale = 1.0 / (in_channels * 3 * 3 * 3) ** 0.5  # Xavier/Glorot initialization
-        self.conv_in.weight = mx.random.normal(weight_shape, scale=scale)
-        self.conv_in.bias = mx.zeros((block_out_channels[0],))
-        
-        logging.info(f"Initialized conv_in with weight shape: {self.conv_in.weight.shape}")
         
         # Down blocks
         self.down_blocks = nn.Module()
@@ -421,13 +460,12 @@ class UNetDecoder(nn.Module):
                 in_channel = reversed_block_out_channels[i + 1]
         
         # Final convolution with correct weight format
-        self.conv_out = nn.Conv3d(block_out_channels[0], out_channels, kernel_size=3, padding=1)
-        weight_shape = (out_channels, block_out_channels[0], 3, 3, 3)
-        scale = 1.0 / (block_out_channels[0] * 3 * 3 * 3) ** 0.5
-        self.conv_out.weight = mx.random.normal(weight_shape, scale=scale)
-        self.conv_out.bias = mx.zeros((out_channels,))
-        
-        logging.info(f"Initialized conv_out with weight shape: {self.conv_out.weight.shape}")
+        self.conv_out = CustomConv3D(
+            in_channels=block_out_channels[0],
+            out_channels=out_channels,
+            kernel_size=3,
+            padding=1
+        )
     
     def custom_load_weights(self, weights):
         """Load weights with robust error handling following Wan2.1 format"""
@@ -455,7 +493,7 @@ class UNetDecoder(nn.Module):
                     current_param = getattr(target, final_attr)
                     
                     # Handle convolution weight transposition
-                    if final_attr == "weight" and isinstance(target, nn.Conv3d):
+                    if final_attr == "weight" and isinstance(target, CustomConv3D):
                         # Check if weight dimensions need to be transposed
                         if current_param.shape != weight.shape:
                             logging.info(f"Processing Conv3D weight for {key}")
@@ -722,12 +760,12 @@ class ResnetBlock3D(nn.Module):
         
         # First convolution block
         self.norm1 = nn.GroupNorm(32, in_channels)
-        self.conv1 = nn.Conv3d(in_channels, out_channels, 3, padding=1)
+        self.conv1 = CustomConv3D(in_channels, out_channels, 3, padding=1)
         
         # Second convolution block
         self.norm2 = nn.GroupNorm(32, out_channels)
         self.dropout = nn.Dropout(0.1)
-        self.conv2 = nn.Conv3d(out_channels, out_channels, 3, padding=1)
+        self.conv2 = CustomConv3D(out_channels, out_channels, 3, padding=1)
         
         # Optional attention block
         if num_attention_heads > 0:
@@ -743,7 +781,7 @@ class ResnetBlock3D(nn.Module):
         
         # Skip connection
         if in_channels != out_channels:
-            self.skip_connection = nn.Conv3d(in_channels, out_channels, 1)
+            self.skip_connection = CustomConv3D(in_channels, out_channels, 1)
         else:
             self.skip_connection = nn.Identity()
     
@@ -792,21 +830,13 @@ class Downsample3D(nn.Module):
         self.out_channels = out_channels or channels
         
         # Initialize conv with correct weight format from Wan2.1
-        self.conv = nn.Conv3d(
-            self.channels,
-            self.out_channels,
+        self.conv = CustomConv3D(
+            in_channels=self.channels,
+            out_channels=self.out_channels,
             kernel_size=3,
             stride=2,
             padding=1
         )
-        
-        # Initialize weights with correct shape and Xavier/Glorot initialization
-        weight_shape = (self.out_channels, self.channels, 3, 3, 3)
-        scale = 1.0 / (self.channels * 3 * 3 * 3) ** 0.5
-        self.conv.weight = mx.random.normal(weight_shape, scale=scale)
-        self.conv.bias = mx.zeros((self.out_channels,))
-        
-        logging.info(f"Initialized Downsample3D conv with weight shape: {self.conv.weight.shape}")
     
     def __call__(self, x, *args, **kwargs):
         # Log input shape for debugging
@@ -829,20 +859,12 @@ class Upsample3D(nn.Module):
         self.out_channels = out_channels or channels
         
         # Initialize conv with correct weight format from Wan2.1
-        self.conv = nn.Conv3d(
-            self.channels,
-            self.out_channels,
+        self.conv = CustomConv3D(
+            in_channels=self.channels,
+            out_channels=self.out_channels,
             kernel_size=3,
             padding=1
         )
-        
-        # Initialize weights with correct shape and Xavier/Glorot initialization
-        weight_shape = (self.out_channels, self.channels, 3, 3, 3)
-        scale = 1.0 / (self.channels * 3 * 3 * 3) ** 0.5
-        self.conv.weight = mx.random.normal(weight_shape, scale=scale)
-        self.conv.bias = mx.zeros((self.out_channels,))
-        
-        logging.info(f"Initialized Upsample3D conv with weight shape: {self.conv.weight.shape}")
     
     def __call__(self, x, *args, **kwargs):
         # Log input shape for debugging
