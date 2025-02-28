@@ -21,6 +21,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import json
+from videogen import VideoGen, save_video
 
 # Add stable diffusion directory to Python path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -361,6 +362,161 @@ def find_available_port(host: str, start_port: int, max_attempts: int = 10) -> i
             return port
     raise RuntimeError(f"Could not find an available port in range {start_port}-{start_port + max_attempts - 1}")
 
+def create_image_ui():
+    """Create the image generation UI tab."""
+    with gr.Column():
+        gr.Markdown("## 🖼️ Text to Image Generation")
+        
+        with gr.Row():
+            with gr.Column(scale=4):
+                prompt = gr.Textbox(
+                    label="Prompt",
+                    placeholder="Enter your image description here...",
+                    lines=3
+                )
+                
+                with gr.Row():
+                    with gr.Column():
+                        model = gr.Dropdown(
+                            choices=[
+                                "Flux Schnell (Fast)",
+                                "SD 2.1 Base (High Quality)",
+                                "Flux Dev (High Quality)",
+                                "SDXL Turbo (Fast)"
+                            ],
+                            value="Flux Schnell (Fast)",
+                            label="Model"
+                        )
+                        width = gr.Slider(
+                            minimum=256,
+                            maximum=1024,
+                            step=64,
+                            value=512,
+                            label="Width"
+                        )
+                        height = gr.Slider(
+                            minimum=256,
+                            maximum=1024,
+                            step=64,
+                            value=512,
+                            label="Height"
+                        )
+                    
+                    with gr.Column():
+                        steps = gr.Slider(
+                            minimum=1,
+                            maximum=100,
+                            step=1,
+                            value=2,
+                            label="Steps"
+                        )
+                        guidance = gr.Slider(
+                            minimum=1.0,
+                            maximum=20.0,
+                            step=0.5,
+                            value=4.0,
+                            label="Guidance Scale"
+                        )
+                        seed = gr.Number(
+                            label="Seed (-1 for random)",
+                            value=-1,
+                            precision=0
+                        )
+                
+                generate_button = gr.Button("Generate Image", variant="primary")
+            
+            with gr.Column(scale=6):
+                result = gr.Gallery(label="Generated Images")
+                generation_info = gr.Markdown(visible=True, value="*Click 'Generate' to create images*")
+                
+                with gr.Group(visible=True) as stats_group:
+                    gr.Markdown("### 🔍 Generation Stats")
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            gen_mem = gr.Markdown("**Generation Memory:** N/A")
+                            total_mem = gr.Markdown("**Total Peak Memory:** N/A")
+                        with gr.Column(scale=1):
+                            gen_time = gr.Markdown("**Generation Time:** N/A")
+                            total_time = gr.Markdown("**Total Time:** N/A")
+        
+        # Example prompts
+        gr.Examples(
+            examples=[
+                ["A beautiful sunset over the ocean, highly detailed, 4k", "Flux Schnell (Fast)", 512, 512, 2, 4.0, -1],
+                ["A cyberpunk cityscape at night with neon lights", "SD 2.1 Base (High Quality)", 512, 512, 50, 7.5, -1],
+                ["A serene mountain landscape with snow-capped peaks", "Flux Dev (High Quality)", 768, 512, 50, 7.5, -1],
+                ["A magical forest with glowing mushrooms and fireflies", "SDXL Turbo (Fast)", 512, 512, 1, 0.0, -1]
+            ],
+            inputs=[prompt, model, width, height, steps, guidance, seed],
+            label="Example Prompts"
+        )
+        
+        def generate_image_wrapper(prompt, model_name, width, height, steps, guidance_scale, seed):
+            try:
+                # Map model names to model IDs
+                model_map = {
+                    "Flux Schnell (Fast)": "flux-schnell",
+                    "SD 2.1 Base (High Quality)": "stabilityai/stable-diffusion-2-1-base",
+                    "Flux Dev (High Quality)": "flux-dev",
+                    "SDXL Turbo (Fast)": "stabilityai/sdxl-turbo"
+                }
+                model = model_map[model_name]
+                
+                # Reset peak memory tracking
+                mx.metal.reset_peak_memory()
+                
+                # Track timing
+                start_total = time.time()
+                
+                # Generate images
+                start_gen = time.time()
+                images = generate_images(
+                    prompt=prompt,
+                    model=model,
+                    width=width,
+                    height=height,
+                    steps=steps,
+                    guidance=guidance_scale,
+                    seed=None if seed < 0 else seed,
+                    return_pil=True
+                )
+                
+                gen_mem = mx.metal.get_peak_memory() / 1024**3
+                gen_time = time.time() - start_gen
+                total_time = time.time() - start_total
+                
+                return [
+                    images,  # Gallery output
+                    f"Generated image from prompt: {prompt}",  # Info
+                    f"**Generation Memory:** {gen_mem:.2f}GB",  # gen_mem
+                    f"**Total Peak Memory:** {gen_mem:.2f}GB",  # total_mem
+                    f"**Generation Time:** {gen_time:.2f}s",  # gen_time
+                    f"**Total Time:** {total_time:.2f}s"  # total_time
+                ]
+            except Exception as e:
+                raise gr.Error(f"Image generation failed: {str(e)}")
+        
+        generate_button.click(
+            fn=generate_image_wrapper,
+            inputs=[
+                prompt,
+                model,
+                width,
+                height,
+                steps,
+                guidance,
+                seed
+            ],
+            outputs=[
+                result,
+                generation_info,
+                gen_mem,
+                total_mem,
+                gen_time,
+                total_time
+            ]
+        )
+
 def create_musicgen_ui():
     """Create the MusicGen UI interface"""
     with gr.Column():
@@ -502,221 +658,175 @@ def create_musicgen_ui():
 
     return gr.Column()
 
-def create_ui():
-    """Create the Gradio UI interface"""
-    with gr.Blocks(title="Flux Generator") as demo:
-        with gr.Tabs():
-            with gr.Tab("🖼️ Image Generation"):
-                gr.Markdown(
-                    """
-                    # 🌊 Flux Generator
-                    Generate beautiful images using Apple Silicon optimized models.
-                    """
+def create_video_ui():
+    """Create the video generation UI tab."""
+    
+    # Initialize video model
+    video_model = None
+    
+    with gr.Column():
+        gr.Markdown("## 🎬 Text to Video Generation")
+        
+        with gr.Row():
+            with gr.Column(scale=4):
+                prompt = gr.Textbox(
+                    label="Prompt",
+                    placeholder="Enter a description of the video you want to generate...",
+                    lines=3
+                )
+                negative_prompt = gr.Textbox(
+                    label="Negative Prompt",
+                    placeholder="What you don't want to see in the video...",
+                    lines=2
                 )
                 
                 with gr.Row():
-                    with gr.Column(scale=4):
-                        prompt = gr.Textbox(
-                            label="Prompt",
-                            placeholder="Enter your prompt here...",
-                            lines=3,
-                            interactive=True
+                    with gr.Column():
+                        num_frames = gr.Slider(
+                            minimum=8,
+                            maximum=32,
+                            step=8,
+                            value=16,
+                            label="Number of Frames"
                         )
-                        
-                        # Model Selection - Changed from Radio to Dropdown
-                        gr.Markdown("### 🎨 Model Selection")
-                        model_choices = [
-                            "Flux Schnell (Fast, 2 steps)",
-                            "Flux Dev (High Quality, 50 steps)",
-                            "SD 2.1 Base (High Quality)",
-                            "SDXL Turbo (Fast)"
-                        ]
-                        model = gr.Dropdown(
-                            choices=model_choices,
-                            value="Flux Schnell (Fast, 2 steps)",
-                            label="Select Model",
-                            interactive=True
+                        fps = gr.Slider(
+                            minimum=4,
+                            maximum=30,
+                            step=1,
+                            value=8,
+                            label="FPS"
                         )
-                        
-                        # Generation Parameters
-                        with gr.Group():
-                            gr.Markdown("#### ⚙️ Generation Parameters")
-                            with gr.Row():
-                                with gr.Column(scale=1):
-                                    num_steps = gr.Slider(
-                                        minimum=1,
-                                        maximum=100,
-                                        step=1,
-                                        value=2,
-                                        label="Steps"
-                                    )
-                                    guidance_scale = gr.Slider(
-                                        minimum=0.0,
-                                        maximum=20.0,
-                                        step=0.5,
-                                        value=4.0,
-                                        label="Guidance Scale"
-                                    )
-                                with gr.Column(scale=1):
-                                    with gr.Row():
-                                        width = gr.Slider(
-                                            minimum=256,
-                                            maximum=1024,
-                                            step=64,
-                                            value=512,
-                                            label="Width"
-                                        )
-                                        height = gr.Slider(
-                                            minimum=256,
-                                            maximum=1024,
-                                            step=64,
-                                            value=512,
-                                            label="Height"
-                                        )
-                                    seed = gr.Number(
-                                        value=-1,
-                                        label="Seed (-1 for random)",
-                                        precision=0
-                                    )
-                        
-                        generate = gr.Button("Generate", variant="primary")
-
-                    with gr.Column(scale=6):
-                        result = gr.Image(label="Generated Image", interactive=False)
-                        image_info = gr.Markdown(visible=True, value="*Click 'Generate' to create a new image*")
-
-                        # Add Stats Box
-                        with gr.Group(visible=True) as stats_group:
-                            gr.Markdown("### 🔍 Generation Stats")
-                            with gr.Row():
-                                with gr.Column(scale=1):
-                                    text_mem = gr.Markdown("**Text Encoding Memory:** N/A")
-                                    gen_mem = gr.Markdown("**Generation Memory:** N/A")
-                                    total_mem = gr.Markdown("**Total Peak Memory:** N/A")
-                                with gr.Column(scale=1):
-                                    text_time = gr.Markdown("**Text Encoding Time:** N/A")
-                                    gen_time = gr.Markdown("**Generation Time:** N/A")
-                                    total_time = gr.Markdown("**Total Time:** N/A")
-
-            with gr.Tab("🎵 Music Generation"):
-                create_musicgen_ui()
-
-        def update_model_params(model_choice):
-            """Update parameters based on selected model"""
-            if "Schnell" in model_choice:
-                return 2, 4.0  # steps, guidance
-            elif "Dev" in model_choice:
-                return 50, 4.0
-            elif "2.1" in model_choice:
-                return 50, 7.5
-            else:
-                return 2, 0.0
-
-        def generate_with_stats(prompt, model_choice, steps, guidance, width, height, seed):
-            try:
-                # Get the actual model key based on selection
-                if "Schnell" in model_choice:
-                    model = "flux-schnell"
-                elif "Dev" in model_choice:
-                    model = "flux-dev"
-                elif "2.1" in model_choice:
-                    model = "stabilityai/stable-diffusion-2-1-base"
-                else:
-                    model = "stabilityai/sdxl-turbo"
+                    
+                    with gr.Column():
+                        width = gr.Slider(
+                            minimum=256,
+                            maximum=512,
+                            step=64,
+                            value=256,
+                            label="Width"
+                        )
+                        height = gr.Slider(
+                            minimum=256,
+                            maximum=512,
+                            step=64,
+                            value=256,
+                            label="Height"
+                        )
                 
-                # Reset peak memory tracking
-                mx.metal.reset_peak_memory()
-
-                # Track timing
-                start_total = time.time()
-
-                # Initialize pipeline
-                start_text = time.time()
-                pipeline = api.init_pipeline(model)
-                text_mem = mx.metal.get_peak_memory() / 1024**3
-                text_time = time.time() - start_text
-                mx.metal.reset_peak_memory()
-
-                # Generate image
-                start_gen = time.time()
-                image_b64 = api.generate_images(
+                with gr.Row():
+                    with gr.Column():
+                        guidance_scale = gr.Slider(
+                            minimum=1.0,
+                            maximum=20.0,
+                            step=0.5,
+                            value=7.5,
+                            label="Guidance Scale"
+                        )
+                        num_steps = gr.Slider(
+                            minimum=10,
+                            maximum=100,
+                            step=10,
+                            value=50,
+                            label="Number of Steps"
+                        )
+                    
+                    with gr.Column():
+                        seed = gr.Number(
+                            label="Seed (-1 for random)",
+                            value=-1,
+                            precision=0
+                        )
+                        generate_button = gr.Button("Generate Video", variant="primary")
+            
+            with gr.Column(scale=3):
+                result = gr.Video(label="Generated Video")
+                stats = gr.Textbox(label="Generation Stats", lines=2)
+        
+        # Example prompts
+        gr.Examples(
+            examples=[
+                ["A beautiful sunset over the ocean waves", "Low quality, blurry", 16],
+                ["A blooming flower timelapse", "Dead plants, wilting", 24],
+                ["A space journey through colorful nebulas", "Empty space, darkness", 32],
+            ],
+            inputs=[prompt, negative_prompt, num_frames],
+            label="Example Prompts"
+        )
+        
+        def generate_video_wrapper(
+            prompt,
+            negative_prompt,
+            num_frames,
+            width,
+            height,
+            guidance_scale,
+            num_steps,
+            fps,
+            seed
+        ):
+            try:
+                nonlocal video_model
+                if video_model is None:
+                    video_model = VideoGen()
+                
+                start_time = time.time()
+                
+                # Generate video frames
+                frames = video_model.generate(
                     prompt=prompt,
-                    model=model,
-                    steps=steps,
-                    guidance=guidance,
+                    negative_prompt=negative_prompt,
+                    num_frames=num_frames,
                     width=width,
                     height=height,
-                    seed=seed if seed >= 0 else None
-                )[0]
-
-                # Convert base64 back to PIL Image for Gradio
-                if image_b64 and not isinstance(image_b64, Image.Image):
-                    image_bytes = base64.b64decode(image_b64)
-                    image = Image.open(io.BytesIO(image_bytes))
-                else:
-                    image = image_b64
-
-                gen_mem = mx.metal.get_peak_memory() / 1024**3
-                gen_time = time.time() - start_gen
-                total_time = time.time() - start_total
-
-                # Get friendly model name
-                model_name = model_choice
-
-                return [
-                    image,  # Image
-                    f"Generated with {model_name}",  # Info
-                    f"**Text Encoding Memory:** {text_mem:.2f}GB",  # text_mem
-                    f"**Generation Memory:** {gen_mem:.2f}GB",  # gen_mem
-                    f"**Total Peak Memory:** {max(text_mem, gen_mem):.2f}GB",  # total_mem
-                    f"**Text Encoding Time:** {text_time:.2f}s",  # text_time
-                    f"**Generation Time:** {gen_time:.2f}s",  # gen_time
-                    f"**Total Time:** {total_time:.2f}s"  # total_time
-                ]
+                    num_inference_steps=num_steps,
+                    guidance_scale=guidance_scale,
+                    seed=None if seed < 0 else seed
+                )
+                
+                # Save video to temporary file
+                temp_file = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+                save_video(frames, temp_file.name, fps=fps)
+                
+                # Calculate stats
+                end_time = time.time()
+                generation_time = end_time - start_time
+                
+                stats_text = f"Generation Time: {generation_time:.2f}s"
+                
+                return temp_file.name, stats_text
+                
             except Exception as e:
-                error_msg = f"❌ Error: {str(e)}"
-                return [
-                    None,  # Image
-                    error_msg,  # Info
-                    "**Text Encoding Memory:** N/A",  # text_mem
-                    "**Generation Memory:** N/A",  # gen_mem
-                    "**Total Peak Memory:** N/A",  # total_mem
-                    "**Text Encoding Time:** N/A",  # text_time
-                    "**Generation Time:** N/A",  # gen_time
-                    "**Total Time:** N/A"  # total_time
-                ]
-
-        # Update the model parameter changes
-        model.change(
-            fn=update_model_params,
-            inputs=[model],
-            outputs=[num_steps, guidance_scale]
-        )
-
-        # Update the generate click handler
-        generate.click(
-            fn=generate_with_stats,
+                raise gr.Error(f"Video generation failed: {str(e)}")
+        
+        generate_button.click(
+            fn=generate_video_wrapper,
             inputs=[
                 prompt,
-                model,  # Single model input now
-                num_steps,
-                guidance_scale,
+                negative_prompt,
+                num_frames,
                 width,
                 height,
+                guidance_scale,
+                num_steps,
+                fps,
                 seed
             ],
-            outputs=[
-                result,
-                image_info,
-                text_mem,
-                gen_mem,
-                total_mem,
-                text_time,
-                gen_time,
-                total_time
-            ]
+            outputs=[result, stats]
         )
 
+def create_ui():
+    """Create the main UI."""
+    with gr.Blocks(title="Flux Generator") as demo:
+        gr.Markdown("# Flux Generator")
+        
+        with gr.Tabs():
+            with gr.TabItem("🖼️ Image Generation"):
+                create_image_ui()
+            with gr.TabItem("🎵 Music Generation"):
+                create_musicgen_ui()
+            with gr.TabItem("🎬 Video Generation"):
+                create_video_ui()
+    
     return demo
 
 # Export the generate_images function at module level

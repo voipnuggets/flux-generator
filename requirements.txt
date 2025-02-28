@@ -42,3 +42,8 @@ einops>=0.7.0
 # MusicGen dependencies
 torch>=2.2.0  # Required for audio processing
 torchaudio>=2.2.0  # Required for audio processing
+
+# Video processing
+imageio>=2.31.1
+torch>=2.2.0  # Required for VAE
+safetensors>=0.5.2  # For loading model weights
