@@ -770,7 +770,6 @@ def create_video_ui():
                     video_model = VideoGen()
                 
                 start_time = time.time()
-                start_memory = mx.memory.used()
                 
                 # Generate video frames
                 frames = video_model.generate(
@@ -790,11 +789,9 @@ def create_video_ui():
                 
                 # Calculate stats
                 end_time = time.time()
-                end_memory = mx.memory.used()
-                memory_used = (end_memory - start_memory) / (1024 * 1024 * 1024)  # GB
                 generation_time = end_time - start_time
                 
-                stats_text = f"Generation Time: {generation_time:.2f}s | Memory Used: {memory_used:.2f}GB"
+                stats_text = f"Generation Time: {generation_time:.2f}s"
                 
                 return temp_file.name, stats_text
                 
