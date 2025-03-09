@@ -67,7 +67,7 @@ class FluxAPI:
         self.pipeline = None
         self.sd_pipeline = None
         self.current_model = None
-    
+
     def init_pipeline(self, model: str):
         """Initialize the pipeline if needed"""
         if model.startswith("stabilityai/"):
@@ -86,7 +86,7 @@ class FluxAPI:
                 self.pipeline = FluxPipeline(flux_model)
                 self.current_model = flux_model
             return self.pipeline
-    
+
     async def txt2img(self, request: SDAPIRequest) -> SDAPIResponse:
         """Generate images from text"""
         try:
@@ -102,7 +102,7 @@ class FluxAPI:
                 n_iter=request.n_iter,
                 return_pil=False  # Get base64 images for API
             )
-            
+
             return SDAPIResponse(
                 images=images,
                 parameters={
@@ -119,7 +119,7 @@ class FluxAPI:
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
-    
+
     def generate_images(
         self,
         prompt: str,
@@ -136,15 +136,15 @@ class FluxAPI:
         """Generate images with the given parameters"""
         # Initialize pipeline
         pipeline = self.init_pipeline(model)
-        
+
         # Parse image size
         latent_size = (height // 8, width // 8)
-        
+
         if model.startswith("stabilityai/"):
             # Use stable diffusion pipeline
             steps = steps or (2 if "sdxl-turbo" in model else 50)
             guidance = guidance or (0.0 if "sdxl-turbo" in model else 7.5)
-            
+
             # Generate latents
             latents = pipeline.generate_latents(
                 prompt,
@@ -156,7 +156,7 @@ class FluxAPI:
         else:
             # Use Flux pipeline
             steps = steps or (50 if model == "flux-dev" else 2)
-            
+
             # Generate latents
             latents = pipeline.generate_latents(
                 prompt,
@@ -166,7 +166,7 @@ class FluxAPI:
                 guidance=guidance,
                 seed=seed
             )
-        
+
         # Process latents
         if not model.startswith("stabilityai/"):
             conditioning = next(latents)
@@ -174,7 +174,7 @@ class FluxAPI:
         
         for x_t in latents:
             mx.eval(x_t)
-        
+
         # Decode images
         decoded = []
         for i in range(0, batch_size * n_iter):
@@ -185,13 +185,13 @@ class FluxAPI:
                 # Flux decode needs latent_size
                 decoded.append(pipeline.decode(x_t[i:i+1], latent_size))
             mx.eval(decoded[-1])
-        
+
         # Convert to PIL Images or base64
         images = []
         for i, img_tensor in enumerate(decoded):
             img_array = (mx.array(img_tensor[0]) * 255).astype(mx.uint8)
             pil_image = Image.fromarray(np.array(img_array))
-            
+
             if return_pil:
                 images.append(pil_image)
             else:
@@ -200,9 +200,9 @@ class FluxAPI:
                 pil_image.save(buffered, format="PNG")
                 img_str = base64.b64encode(buffered.getvalue()).decode()
                 images.append(img_str)
-        
+
         return images
-    
+
     def list_models(self):
         """List available models"""
         return [
@@ -243,7 +243,7 @@ class FluxAPI:
                 "config": None
             }
         ]
-    
+
     def get_options(self):
         """Get current options"""
         return {
@@ -272,11 +272,11 @@ class FluxAPI:
                 }
             ]
         }
-    
+
     def set_options(self, options: dict):
         """Set options"""
         return {"success": True}
-    
+
     def get_progress(self):
         """Get generation progress"""
         return {
@@ -324,10 +324,10 @@ def check_system_compatibility():
     """Check if running on Apple Silicon Mac"""
     if sys.platform != 'darwin':
         raise SystemError("This application only runs on macOS")
-    
+
     if platform.machine() != 'arm64':
         raise SystemError("This application requires an Apple Silicon Mac")
-    
+
     return True
 
 def to_latent_size(size: Tuple[int, int]) -> Tuple[int, int]:
@@ -379,7 +379,34 @@ def create_musicgen_ui():
                     lines=3,
                     interactive=True
                 )
+
+                # Add example prompts as dropdown
+                example_prompts = gr.Dropdown(
+                    choices=[
+                        "An upbeat electronic dance track with a strong beat and synthesizer melody",
+                        "A peaceful piano solo with gentle melodies, perfect for meditation",
+                        "Epic orchestral music with dramatic strings and powerful drums",
+                        "A cheerful folk song with acoustic guitar and harmonica",
+                        "Smooth jazz with saxophone and soft piano in the background",
+                        "A rock anthem with electric guitar solos and energetic drums",
+                        "Ambient space music with ethereal synthesizers and cosmic sounds",
+                        "A classical symphony with full orchestra, emphasizing strings and woodwinds",
+                    ],
+                    label="Example Prompts (Select to use)",
+                    interactive=True,
+                    allow_custom_value=False
+                )
                 
+                # Connect dropdown to text prompt
+                def update_prompt(prompt):
+                    return prompt if prompt else ""
+  
+                example_prompts.change(
+                    fn=update_prompt,
+                    inputs=[example_prompts],
+                    outputs=[text_prompt]
+                )
+
                 # Generation Parameters
                 with gr.Group():
                     gr.Markdown("#### ⚙️ Generation Parameters")
@@ -387,10 +414,10 @@ def create_musicgen_ui():
                         with gr.Column(scale=1):
                             max_steps = gr.Slider(
                                 minimum=50,
-                                maximum=500,
+                                maximum=2500,
                                 step=50,
                                 value=200,
-                                label="Max Steps"
+                                label="Max Steps, more steps = longer music"
                             )
                             temperature = gr.Slider(
                                 minimum=0.1,
@@ -414,7 +441,7 @@ def create_musicgen_ui():
                                 value=3.0,
                                 label="Guidance Scale"
                             )
-                
+
                 generate_btn = gr.Button("Generate Music", variant="primary")
 
             with gr.Column(scale=6):
@@ -436,13 +463,16 @@ def create_musicgen_ui():
             try:
                 # Reset peak memory tracking
                 mx.metal.reset_peak_memory()
-                
+
                 # Track timing
                 start_total = time.time()
-                
+
                 # Initialize model
                 model = MusicGen.from_pretrained("facebook/musicgen-medium")
-                
+
+                # Ensure max_steps is within valid range
+                max_steps = min(2500, max(50, max_steps))
+
                 # Generate audio
                 start_gen = time.time()
                 audio = model.generate(
@@ -456,7 +486,7 @@ def create_musicgen_ui():
                 gen_mem = mx.metal.get_peak_memory() / 1024**3
                 gen_time = time.time() - start_gen
                 total_time = time.time() - start_total
-                
+
                 # Save audio to temporary file
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
                     save_audio(temp_file.name, audio, model.sampling_rate)
@@ -513,7 +543,7 @@ def create_ui():
                     Generate beautiful images using Apple Silicon optimized models.
                     """
                 )
-                
+ 
                 with gr.Row():
                     with gr.Column(scale=4):
                         prompt = gr.Textbox(
@@ -522,7 +552,7 @@ def create_ui():
                             lines=3,
                             interactive=True
                         )
-                        
+
                         # Model Selection - Changed from Radio to Dropdown
                         gr.Markdown("### 🎨 Model Selection")
                         model_choices = [
@@ -537,7 +567,7 @@ def create_ui():
                             label="Select Model",
                             interactive=True
                         )
-                        
+
                         # Generation Parameters
                         with gr.Group():
                             gr.Markdown("#### ⚙️ Generation Parameters")
@@ -578,7 +608,7 @@ def create_ui():
                                         label="Seed (-1 for random)",
                                         precision=0
                                     )
-                        
+
                         generate = gr.Button("Generate", variant="primary")
 
                     with gr.Column(scale=6):
@@ -623,7 +653,7 @@ def create_ui():
                     model = "stabilityai/stable-diffusion-2-1-base"
                 else:
                     model = "stabilityai/sdxl-turbo"
-                
+
                 # Reset peak memory tracking
                 mx.metal.reset_peak_memory()
 
@@ -751,17 +781,17 @@ def main():
     """Main entry point"""
     try:
         check_system_compatibility()
-        
+     
         # Parse command line arguments
         parser = argparse.ArgumentParser(description="FLUX Image Generator")
         parser.add_argument("--port", type=int, default=7860, help="Port to run the server on")
-        
+ 
         # Add mutually exclusive group for listening options
         listen_group = parser.add_mutually_exclusive_group()
         listen_group.add_argument("--listen-all", action="store_true", help="Listen on all network interfaces (0.0.0.0)")
 
         args = parser.parse_args()
-        
+
         # Determine host based on listening flags
         if args.listen_all:
             host = "0.0.0.0"
@@ -770,22 +800,22 @@ def main():
         else:
             host = "127.0.0.1"  # localhost only
             print("\nServer is listening on localhost only (most secure)")
-        
+
         # Check port availability
         if not check_port_available(host, args.port):
             port = find_available_port(host, args.port)
             print(f"\nWarning: Port {args.port} is in use, using port {port} instead")
         else:
             port = args.port
-        
+
         # Create Gradio interface
         demo = create_ui()
-        
+
         print(f"\nStarting Flux server on {host}:{port}")
         print("\nAccess modes:")
         print("1. Local only:     default                  (most secure, localhost only)")
         print("2. All networks:   --listen-all            (allows all connections)")
-        
+
         if host != "127.0.0.1":
             print("\nTo use with Open WebUI in Docker:")
             print(f"1. Start the server with: python3.11 flux_app.py --listen-all")
@@ -793,10 +823,10 @@ def main():
         
         # Configure Gradio queue
         demo.queue(max_size=20)  # Allow up to 20 tasks in queue
-        
+
         # Create FastAPI app with middleware and API endpoints
         app = FastAPI()
-        
+  
         # Add CORS middleware
         app.add_middleware(
             CORSMiddleware,
@@ -805,19 +835,19 @@ def main():
             allow_methods=["*"],
             allow_headers=["*"],
         )
-        
+
         # Create and mount API endpoints
         create_api(app)
-        
+
         # Mount Gradio app to FastAPI
         app = gr.mount_gradio_app(app, demo, path="/")
-        
+
         # Keep the server running
         import uvicorn
         config = uvicorn.Config(app, host=host, port=port, log_level="info")
         server = uvicorn.Server(config)
         server.run()
-        
+
     except SystemError as e:
         print(f"Error: {e}")
         sys.exit(1)
@@ -829,7 +859,7 @@ def get_app():
     """Create and configure FastAPI app for testing"""
     # Create FastAPI app
     app = FastAPI()
-    
+
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -838,16 +868,16 @@ def get_app():
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
+
     # Create Gradio interface
     demo = create_ui()
-    
+
     # Create and mount API endpoints
     create_api(app)
-    
+
     # Mount Gradio app to FastAPI
     app = gr.mount_gradio_app(app, demo, path="/")
-    
+
     return app
 
 if __name__ == "__main__":
